@@ -122,7 +122,7 @@ ENGINE_set_default_pkey_asn1_meths      121	1_1_0	EXIST::FUNCTION:ENGINE
 OCSP_BASICRESP_add1_ext_i2d             122	1_1_0	EXIST::FUNCTION:OCSP
 EVP_camellia_128_ctr                    123	1_1_0	EXIST::FUNCTION:CAMELLIA
 EVP_CIPHER_impl_ctx_size                124	1_1_0	EXIST::FUNCTION:
-X509_CRL_get_nextUpdate                 125	1_1_0	EXIST::FUNCTION:
+X509_CRL_get_nextUpdate                 125	1_1_0	EXIST::FUNCTION:DEPRECATEDIN_1_1_0
 PKCS12_free                             126	1_1_0	EXIST::FUNCTION:
 CMS_signed_get_attr                     127	1_1_0	EXIST::FUNCTION:CMS
 ENGINE_set_destroy_function             128	1_1_0	EXIST::FUNCTION:ENGINE
@@ -291,7 +291,7 @@ CRYPTO_gcm128_setiv                     291	1_1_0	EXIST::FUNCTION:
 ASN1_PCTX_set_oid_flags                 292	1_1_0	EXIST::FUNCTION:
 d2i_ASN1_INTEGER                        293	1_1_0	EXIST::FUNCTION:
 i2d_PKCS7_ENCRYPT                       294	1_1_0	EXIST::FUNCTION:
-CT_POLICY_EVAL_CTX_set0_issuer          295	1_1_0	EXIST::FUNCTION:CT
+CT_POLICY_EVAL_CTX_set1_issuer          295	1_1_0	EXIST::FUNCTION:CT
 X509_NAME_ENTRY_set                     296	1_1_0	EXIST::FUNCTION:
 PKCS8_set0_pbe                          297	1_1_0	EXIST::FUNCTION:
 PEM_write_bio_DSA_PUBKEY                298	1_1_0	EXIST::FUNCTION:DSA
@@ -457,7 +457,7 @@ DH_new_method                           457	1_1_0	EXIST::FUNCTION:DH
 BF_ecb_encrypt                          458	1_1_0	EXIST::FUNCTION:BF
 PEM_write_bio_DHparams                  459	1_1_0	EXIST::FUNCTION:DH
 EVP_DigestFinal                         460	1_1_0	EXIST::FUNCTION:
-CT_POLICY_EVAL_CTX_set0_log_store       461	1_1_0	EXIST::FUNCTION:CT
+CT_POLICY_EVAL_CTX_set_shared_CTLOG_STORE 461	1_1_0	EXIST::FUNCTION:CT
 X509v3_asid_add_id_or_range             462	1_1_0	EXIST::FUNCTION:RFC3779
 X509_NAME_ENTRY_create_by_NID           463	1_1_0	EXIST::FUNCTION:
 EC_KEY_METHOD_get_init                  464	1_1_0	EXIST::FUNCTION:EC
@@ -527,7 +527,7 @@ BN_set_negative                         527	1_1_0	EXIST::FUNCTION:
 i2d_TS_RESP_bio                         528	1_1_0	EXIST::FUNCTION:TS
 ASYNC_WAIT_CTX_set_wait_fd              529	1_1_0	EXIST::FUNCTION:
 ERR_func_error_string                   530	1_1_0	EXIST::FUNCTION:
-ASN1_STRING_data                        531	1_1_0	EXIST::FUNCTION:
+ASN1_STRING_data                        531	1_1_0	EXIST::FUNCTION:DEPRECATEDIN_1_1_0
 X509_CRL_add1_ext_i2d                   532	1_1_0	EXIST::FUNCTION:
 i2d_TS_TST_INFO                         533	1_1_0	EXIST::FUNCTION:TS
 OBJ_sigid_free                          534	1_1_0	EXIST::FUNCTION:
@@ -1053,7 +1053,7 @@ BN_get_word                             1044	1_1_0	EXIST::FUNCTION:
 EVP_CipherFinal                         1045	1_1_0	EXIST::FUNCTION:
 i2d_X509_bio                            1046	1_1_0	EXIST::FUNCTION:
 X509_EXTENSION_new                      1047	1_1_0	EXIST::FUNCTION:
-X509_get_notAfter                       1048	1_1_0	EXIST::FUNCTION:
+X509_get_notAfter                       1048	1_1_0	EXIST::FUNCTION:DEPRECATEDIN_1_1_0
 X509_ALGOR_dup                          1049	1_1_0	EXIST::FUNCTION:
 d2i_X509_REQ_INFO                       1050	1_1_0	EXIST::FUNCTION:
 d2i_EC_PUBKEY_bio                       1051	1_1_0	EXIST::FUNCTION:EC
@@ -1106,7 +1106,7 @@ UI_method_get_prompt_constructor        1097	1_1_0	EXIST::FUNCTION:UI
 ASN1_NULL_it                            1098	1_1_0	EXIST:!EXPORT_VAR_AS_FUNCTION:VARIABLE:
 ASN1_NULL_it                            1098	1_1_0	EXIST:EXPORT_VAR_AS_FUNCTION:FUNCTION:
 X509_REQ_get_pubkey                     1099	1_1_0	EXIST::FUNCTION:
-X509_CRL_set_nextUpdate                 1100	1_1_0	EXIST::FUNCTION:
+X509_CRL_set1_nextUpdate                1100	1_1_0	EXIST::FUNCTION:
 EVP_des_ede3_cfb64                      1101	1_1_0	EXIST::FUNCTION:DES
 BN_to_ASN1_INTEGER                      1102	1_1_0	EXIST::FUNCTION:
 EXTENDED_KEY_USAGE_free                 1103	1_1_0	EXIST::FUNCTION:
@@ -1390,7 +1390,7 @@ EVP_PKEY_asn1_free                      1375	1_1_0	EXIST::FUNCTION:
 ENGINE_unregister_DH                    1376	1_1_0	EXIST::FUNCTION:ENGINE
 PROXY_CERT_INFO_EXTENSION_it            1377	1_1_0	EXIST:!EXPORT_VAR_AS_FUNCTION:VARIABLE:
 PROXY_CERT_INFO_EXTENSION_it            1377	1_1_0	EXIST:EXPORT_VAR_AS_FUNCTION:FUNCTION:
-CT_POLICY_EVAL_CTX_set0_cert            1378	1_1_0	EXIST::FUNCTION:CT
+CT_POLICY_EVAL_CTX_set1_cert            1378	1_1_0	EXIST::FUNCTION:CT
 X509_NAME_hash                          1379	1_1_0	EXIST::FUNCTION:
 SCT_set_timestamp                       1380	1_1_0	EXIST::FUNCTION:CT
 UI_new                                  1381	1_1_0	EXIST::FUNCTION:UI
@@ -2388,7 +2388,7 @@ ASN1_GENERALIZEDTIME_check              2356	1_1_0	EXIST::FUNCTION:
 BN_clear_bit                            2357	1_1_0	EXIST::FUNCTION:
 BN_bn2lebinpad                          2358	1_1_0	EXIST::FUNCTION:
 EVP_PKEY_up_ref                         2359	1_1_0	EXIST::FUNCTION:
-X509_get_notBefore                      2360	1_1_0	EXIST::FUNCTION:
+X509_get_notBefore                      2360	1_1_0	EXIST::FUNCTION:DEPRECATEDIN_1_1_0
 BN_nist_mod_224                         2361	1_1_0	EXIST::FUNCTION:
 DES_decrypt3                            2362	1_1_0	EXIST::FUNCTION:DES
 OTHERNAME_it                            2363	1_1_0	EXIST:!EXPORT_VAR_AS_FUNCTION:VARIABLE:
@@ -2465,7 +2465,7 @@ i2d_TS_MSG_IMPRINT_fp                   2432	1_1_0	EXIST::FUNCTION:STDIO,TS
 PKCS12_new                              2433	1_1_0	EXIST::FUNCTION:
 X509_REVOKED_set_serialNumber           2434	1_1_0	EXIST::FUNCTION:
 EVP_get_digestbyname                    2435	1_1_0	EXIST::FUNCTION:
-X509_CRL_get_lastUpdate                 2436	1_1_0	EXIST::FUNCTION:
+X509_CRL_get_lastUpdate                 2436	1_1_0	EXIST::FUNCTION:DEPRECATEDIN_1_1_0
 OBJ_create_objects                      2437	1_1_0	EXIST::FUNCTION:
 EVP_enc_null                            2438	1_1_0	EXIST::FUNCTION:
 OCSP_ONEREQ_get_ext_by_critical         2439	1_1_0	EXIST::FUNCTION:OCSP
@@ -2564,7 +2564,7 @@ DSA_sign                                2527	1_1_0	EXIST::FUNCTION:DSA
 RAND_egd                                2528	1_1_0	EXIST::FUNCTION:EGD
 ASN1_d2i_bio                            2529	1_1_0	EXIST::FUNCTION:
 X509_REQ_digest                         2531	1_1_0	EXIST::FUNCTION:
-X509_set_notAfter                       2532	1_1_0	EXIST::FUNCTION:
+X509_set1_notAfter                      2532	1_1_0	EXIST::FUNCTION:
 EVP_CIPHER_type                         2533	1_1_0	EXIST::FUNCTION:
 ASN1_TYPE_set_octetstring               2534	1_1_0	EXIST::FUNCTION:
 EVP_PKEY_asn1_set_free                  2535	1_1_0	EXIST::FUNCTION:
@@ -3303,7 +3303,7 @@ EVP_des_ede3_wrap                       3252	1_1_0	EXIST::FUNCTION:DES
 GENERAL_SUBTREE_it                      3253	1_1_0	EXIST:!EXPORT_VAR_AS_FUNCTION:VARIABLE:
 GENERAL_SUBTREE_it                      3253	1_1_0	EXIST:EXPORT_VAR_AS_FUNCTION:FUNCTION:
 EVP_read_pw_string_min                  3254	1_1_0	EXIST::FUNCTION:UI
-X509_set_notBefore                      3255	1_1_0	EXIST::FUNCTION:
+X509_set1_notBefore                     3255	1_1_0	EXIST::FUNCTION:
 MD4                                     3256	1_1_0	EXIST::FUNCTION:MD4
 EVP_PKEY_CTX_dup                        3257	1_1_0	EXIST::FUNCTION:
 ENGINE_setup_bsd_cryptodev              3258	1_1_0	EXIST:__FreeBSD__:FUNCTION:DEPRECATEDIN_1_1_0,ENGINE
@@ -3741,7 +3741,7 @@ OCSP_REVOKEDINFO_free                   3693	1_1_0	EXIST::FUNCTION:OCSP
 EVP_CIPHER_CTX_encrypting               3694	1_1_0	EXIST::FUNCTION:
 EC_KEY_can_sign                         3695	1_1_0	EXIST::FUNCTION:EC
 PEM_write_bio_RSAPublicKey              3696	1_1_0	EXIST::FUNCTION:RSA
-X509_CRL_set_lastUpdate                 3697	1_1_0	EXIST::FUNCTION:
+X509_CRL_set1_lastUpdate                3697	1_1_0	EXIST::FUNCTION:
 OCSP_sendreq_nbio                       3698	1_1_0	EXIST::FUNCTION:OCSP
 PKCS8_encrypt                           3699	1_1_0	EXIST::FUNCTION:
 i2d_PKCS7_fp                            3700	1_1_0	EXIST::FUNCTION:STDIO
@@ -4188,3 +4188,14 @@ X509_STORE_lock                         4134	1_1_0	EXIST::FUNCTION:
 X509_set_proxy_pathlen                  4135	1_1_0	EXIST::FUNCTION:
 X509_get_proxy_pathlen                  4136	1_1_0	EXIST::FUNCTION:
 DSA_bits                                4137	1_1_0	EXIST::FUNCTION:DSA
+EVP_PKEY_set1_tls_encodedpoint          4138	1_1_0	EXIST::FUNCTION:
+EVP_PKEY_get1_tls_encodedpoint          4139	1_1_0	EXIST::FUNCTION:
+ASN1_STRING_get0_data                   4140	1_1_0	EXIST::FUNCTION:
+X509_SIG_get0_mutable                   4141	1_1_0	EXIST::FUNCTION:
+X509_get0_serialNumber                  4142	1_1_0	EXIST::FUNCTION:
+PKCS12_get_attr                         4143	1_1_0	EXIST::FUNCTION:DEPRECATEDIN_1_1_0
+X509_CRL_get0_lastUpdate                4144	1_1_0	EXIST::FUNCTION:
+X509_get0_notBefore                     4145	1_1_0	EXIST::FUNCTION:
+X509_get0_notAfter                      4146	1_1_0	EXIST::FUNCTION:
+X509_CRL_get0_nextUpdate                4147	1_1_0	EXIST::FUNCTION:
+BIO_get_new_index                       4148	1_1_0	EXIST::FUNCTION:

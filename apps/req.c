@@ -46,11 +46,11 @@
 
 static int make_REQ(X509_REQ *req, EVP_PKEY *pkey, char *dn, int mutlirdn,
                     int attribs, unsigned long chtype);
-static int build_subject(X509_REQ *req, char *subj, unsigned long chtype,
+static int build_subject(X509_REQ *req, const char *subj, unsigned long chtype,
                          int multirdn);
 static int prompt_info(X509_REQ *req,
-                       STACK_OF(CONF_VALUE) *dn_sk, char *dn_sect,
-                       STACK_OF(CONF_VALUE) *attr_sk, char *attr_sect,
+                       STACK_OF(CONF_VALUE) *dn_sk, const char *dn_sect,
+                       STACK_OF(CONF_VALUE) *attr_sk, const char *attr_sect,
                        int attribs, unsigned long chtype);
 static int auto_info(X509_REQ *req, STACK_OF(CONF_VALUE) *sk,
                      STACK_OF(CONF_VALUE) *attr, int attribs,
@@ -616,9 +616,7 @@ int req_main(int argc, char **argv)
 
             if (!X509_set_issuer_name(x509ss, X509_REQ_get_subject_name(req)))
                 goto end;
-            if (!X509_gmtime_adj(X509_get_notBefore(x509ss), 0))
-                goto end;
-            if (!X509_time_adj_ex(X509_get_notAfter(x509ss), days, 0, NULL))
+            if (!set_cert_times(x509ss, NULL, NULL, days))
                 goto end;
             if (!X509_set_subject_name
                 (x509ss, X509_REQ_get_subject_name(req)))
@@ -888,7 +886,7 @@ static int make_REQ(X509_REQ *req, EVP_PKEY *pkey, char *subj, int multirdn,
  * subject is expected to be in the format /type0=value0/type1=value1/type2=...
  * where characters may be escaped by \
  */
-static int build_subject(X509_REQ *req, char *subject, unsigned long chtype,
+static int build_subject(X509_REQ *req, const char *subject, unsigned long chtype,
                          int multirdn)
 {
     X509_NAME *n;
@@ -905,8 +903,8 @@ static int build_subject(X509_REQ *req, char *subject, unsigned long chtype,
 }
 
 static int prompt_info(X509_REQ *req,
-                       STACK_OF(CONF_VALUE) *dn_sk, char *dn_sect,
-                       STACK_OF(CONF_VALUE) *attr_sk, char *attr_sect,
+                       STACK_OF(CONF_VALUE) *dn_sk, const char *dn_sect,
+                       STACK_OF(CONF_VALUE) *attr_sk, const char *attr_sect,
                        int attribs, unsigned long chtype)
 {
     int i;

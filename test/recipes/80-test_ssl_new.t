@@ -29,7 +29,7 @@ map { s/\.in// } @conf_files;
 
 # We hard-code the number of tests to double-check that the globbing above
 # finds all files as expected.
-plan tests => 12;  # = scalar @conf_srcs
+plan tests => 13;  # = scalar @conf_srcs
 
 # Some test results depend on the configuration of enabled protocols. We only
 # verify generated sources in the default configuration.
@@ -44,6 +44,8 @@ my $no_npn = disabled("nextprotoneg");
 my $no_ct = disabled("ct");
 my $no_ec = disabled("ec");
 
+# Add your test here if the test conf.in generates test cases and/or
+# expectations dynamically based on the OpenSSL compile-time config.
 my %conf_dependent_tests = (
   "02-protocol-version.conf" => !$is_default_tls,
   "04-client_auth.conf" => !$is_default_tls,
@@ -52,13 +54,20 @@ my %conf_dependent_tests = (
   "11-dtls_resumption.conf" => !$is_default_dtls,
 );
 
-# Default is $no_tls but some tests have different skip conditions.
+# Add your test here if it should be skipped for some compile-time
+# configurations. Default is $no_tls but some tests have different skip
+# conditions.
 my %skip = (
   "07-dtls-protocol-version.conf" => $no_dtls,
   "08-npn.conf" => $no_tls || $no_npn,
   "10-resumption.conf" => disabled("tls1_1") || disabled("tls1_2"),
   "11-dtls_resumption.conf" => disabled("dtls1") || disabled("dtls1_2"),
   "12-ct.conf" => $no_tls || $no_ct || $no_ec,
+  # We could run some of these tests without TLS 1.2 if we had a per-test
+  # disable instruction but that's a bizarre configuration not worth
+  # special-casing for.
+  # We should review this once we have TLS 1.3.
+  "13-fragmentation.conf" => disabled("tls1_2")
 );
 
 foreach my $conf (@conf_files) {

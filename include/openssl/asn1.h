@@ -550,7 +550,8 @@ void ASN1_STRING_set0(ASN1_STRING *str, void *data, int len);
 int ASN1_STRING_length(const ASN1_STRING *x);
 void ASN1_STRING_length_set(ASN1_STRING *x, int n);
 int ASN1_STRING_type(const ASN1_STRING *x);
-unsigned char *ASN1_STRING_data(ASN1_STRING *x);
+DEPRECATEDIN_1_1_0(unsigned char *ASN1_STRING_data(ASN1_STRING *x))
+const unsigned char *ASN1_STRING_get0_data(const ASN1_STRING *x);
 
 DECLARE_ASN1_FUNCTIONS(ASN1_BIT_STRING)
 int ASN1_BIT_STRING_set(ASN1_BIT_STRING *a, unsigned char *d, int length);
@@ -628,13 +629,13 @@ ASN1_GENERALIZEDTIME *ASN1_TIME_to_generalizedtime(ASN1_TIME *t, ASN1_GENERALIZE
                                                    **out);
 int ASN1_TIME_set_string(ASN1_TIME *s, const char *str);
 
-int i2a_ASN1_INTEGER(BIO *bp, ASN1_INTEGER *a);
+int i2a_ASN1_INTEGER(BIO *bp, const ASN1_INTEGER *a);
 int a2i_ASN1_INTEGER(BIO *bp, ASN1_INTEGER *bs, char *buf, int size);
-int i2a_ASN1_ENUMERATED(BIO *bp, ASN1_ENUMERATED *a);
+int i2a_ASN1_ENUMERATED(BIO *bp, const ASN1_ENUMERATED *a);
 int a2i_ASN1_ENUMERATED(BIO *bp, ASN1_ENUMERATED *bs, char *buf, int size);
 int i2a_ASN1_OBJECT(BIO *bp, const ASN1_OBJECT *a);
 int a2i_ASN1_STRING(BIO *bp, ASN1_STRING *bs, char *buf, int size);
-int i2a_ASN1_STRING(BIO *bp, ASN1_STRING *a, int type);
+int i2a_ASN1_STRING(BIO *bp, const ASN1_STRING *a, int type);
 int i2t_ASN1_OBJECT(char *buf, int buf_len, const ASN1_OBJECT *a);
 
 int a2d_ASN1_OBJECT(unsigned char *out, int olen, const char *buf, int num);
@@ -771,7 +772,7 @@ int ASN1_TYPE_set_int_octetstring(ASN1_TYPE *a, long num,
 int ASN1_TYPE_get_int_octetstring(const ASN1_TYPE *a, long *num,
                                   unsigned char *data, int max_len);
 
-void *ASN1_item_unpack(ASN1_STRING *oct, const ASN1_ITEM *it);
+void *ASN1_item_unpack(const ASN1_STRING *oct, const ASN1_ITEM *it);
 
 ASN1_STRING *ASN1_item_pack(void *obj, const ASN1_ITEM *it,
                             ASN1_OCTET_STRING **oct);

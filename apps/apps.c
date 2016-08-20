@@ -320,9 +320,9 @@ int password_callback(char *buf, int bufsiz, int verify, PW_CB_DATA *cb_tmp)
     return res;
 }
 
-static char *app_get_pass(char *arg, int keepbio);
+static char *app_get_pass(const char *arg, int keepbio);
 
-int app_passwd(char *arg1, char *arg2, char **pass1, char **pass2)
+int app_passwd(const char *arg1, const char *arg2, char **pass1, char **pass2)
 {
     int same;
     if (!arg2 || !arg1 || strcmp(arg1, arg2))
@@ -344,7 +344,7 @@ int app_passwd(char *arg1, char *arg2, char **pass1, char **pass2)
     return 1;
 }
 
-static char *app_get_pass(char *arg, int keepbio)
+static char *app_get_pass(const char *arg, int keepbio)
 {
     char *tmp, tpass[APP_PASS_LEN];
     static BIO *pwdbio = NULL;
@@ -1185,7 +1185,7 @@ void print_array(BIO *out, const char* title, int len, const unsigned char* d)
     BIO_printf(out, "\n};\n");
 }
 
-X509_STORE *setup_verify(char *CAfile, char *CApath, int noCAfile, int noCApath)
+X509_STORE *setup_verify(const char *CAfile, const char *CApath, int noCAfile, int noCApath)
 {
     X509_STORE *store = X509_STORE_new();
     X509_LOOKUP *lookup;
@@ -1318,7 +1318,7 @@ static IMPLEMENT_LHASH_HASH_FN(index_name, OPENSSL_CSTRING)
 static IMPLEMENT_LHASH_COMP_FN(index_name, OPENSSL_CSTRING)
 #undef BSIZE
 #define BSIZE 256
-BIGNUM *load_serial(char *serialfile, int create, ASN1_INTEGER **retai)
+BIGNUM *load_serial(const char *serialfile, int create, ASN1_INTEGER **retai)
 {
     BIO *in = NULL;
     BIGNUM *ret = NULL;
@@ -1363,7 +1363,7 @@ BIGNUM *load_serial(char *serialfile, int create, ASN1_INTEGER **retai)
     return (ret);
 }
 
-int save_serial(char *serialfile, char *suffix, BIGNUM *serial,
+int save_serial(const char *serialfile, const char *suffix, const BIGNUM *serial,
                 ASN1_INTEGER **retai)
 {
     char buf[1][BSIZE];
@@ -1413,7 +1413,8 @@ int save_serial(char *serialfile, char *suffix, BIGNUM *serial,
     return (ret);
 }
 
-int rotate_serial(char *serialfile, char *new_suffix, char *old_suffix)
+int rotate_serial(const char *serialfile, const char *new_suffix,
+                  const char *old_suffix)
 {
     char buf[2][BSIZE];
     int i, j;
@@ -1483,7 +1484,7 @@ int rand_serial(BIGNUM *b, ASN1_INTEGER *ai)
     return ret;
 }
 
-CA_DB *load_index(char *dbfile, DB_ATTR *db_attr)
+CA_DB *load_index(const char *dbfile, DB_ATTR *db_attr)
 {
     CA_DB *retdb = NULL;
     TXT_DB *tmpdb = NULL;
@@ -1938,7 +1939,7 @@ static const char *get_dp_url(DIST_POINT *dp)
         gen = sk_GENERAL_NAME_value(gens, i);
         uri = GENERAL_NAME_get0_value(gen, &gtype);
         if (gtype == GEN_URI && ASN1_STRING_length(uri) > 6) {
-            char *uptr = (char *)ASN1_STRING_data(uri);
+            const char *uptr = (const char *)ASN1_STRING_get0_data(uri);
             if (strncmp(uptr, "http://", 7) == 0)
                 return uptr;
         }
@@ -2581,3 +2582,44 @@ int has_stdin_waiting(void)
     return _kbhit();
 }
 #endif
+
+/* Corrupt a signature by modifying final byte */
+void corrupt_signature(const ASN1_STRING *signature)
+{
+        unsigned char *s = signature->data;
+        s[signature->length - 1] ^= 0x1;
+}
+
+int set_cert_times(X509 *x, const char *startdate, const char *enddate,
+                   int days)
+{
+    int rv = 0;
+    ASN1_TIME *tm = ASN1_TIME_new();
+    if (tm == NULL)
+        goto err;
+    if (startdate == NULL || strcmp(startdate, "today") == 0) {
+        if (!X509_gmtime_adj(tm, 0))
+            goto err;
+    } else if (!ASN1_TIME_set_string(tm, startdate)) {
+            goto err;
+    }
+
+    if (!X509_set1_notBefore(x, tm))
+        goto err;
+
+    if (enddate == NULL) {
+        if (!X509_time_adj_ex(tm, days, 0, NULL))
+            goto err;
+    } else if (!ASN1_TIME_set_string(tm, enddate)) {
+            goto err;
+    }
+
+    if (!X509_set1_notAfter(x, tm))
+        goto err;
+
+    rv = 1;
+
+    err:
+    ASN1_TIME_free(tm);
+    return rv;
+}

@@ -347,7 +347,7 @@ static double Time_F(int s)
 
 static void multiblock_speed(const EVP_CIPHER *evp_cipher);
 
-static int found(const char *name, const OPT_PAIR * pairs, int *result)
+static int found(const char *name, const OPT_PAIR *pairs, int *result)
 {
     for (; pairs->name; pairs++)
         if (strcmp(name, pairs->name) == 0) {
@@ -372,7 +372,7 @@ OPTIONS speed_options[] = {
      "Time decryption instead of encryption (only EVP)"},
     {"mr", OPT_MR, '-', "Produce machine readable output"},
     {"mb", OPT_MB, '-',
-        "Enable (tls1.1) multi-block mode on evp_cipher requested with -evp"},
+     "Enable (tls1.1) multi-block mode on evp_cipher requested with -evp"},
     {"misalign", OPT_MISALIGN, 'n', "Amount to mis-align buffers"},
     {"elapsed", OPT_ELAPSED, '-',
      "Measure time in real time instead of CPU user time"},
@@ -380,7 +380,8 @@ OPTIONS speed_options[] = {
     {"multi", OPT_MULTI, 'p', "Run benchmarks in parallel"},
 #endif
 #ifndef OPENSSL_NO_ASYNC
-    {"async_jobs", OPT_ASYNCJOBS, 'p', "Enable async mode and start pnum jobs"},
+    {"async_jobs", OPT_ASYNCJOBS, 'p',
+     "Enable async mode and start pnum jobs"},
 #endif
 #ifndef OPENSSL_NO_ENGINE
     {"engine", OPT_ENGINE, 's', "Use engine, possibly a hardware device"},
@@ -430,8 +431,6 @@ static OPT_PAIR doit_choices[] = {
 #endif
 #ifndef OPENSSL_NO_MD5
     {"md5", D_MD5},
-#endif
-#ifndef OPENSSL_NO_MD5
     {"hmac", D_HMAC},
 #endif
     {"sha1", D_SHA1},
@@ -555,6 +554,7 @@ static OPT_PAIR ecdsa_choices[] = {
     {"ecdsab571", R_EC_B571},
     {NULL}
 };
+
 static OPT_PAIR ecdh_choices[] = {
     {"ecdhp160", R_EC_P160},
     {"ecdhp192", R_EC_P192},
@@ -1067,8 +1067,7 @@ static void *KDF1_SHA1(const void *in, size_t inlen, void *out,
     *outlen = SHA_DIGEST_LENGTH;
     return SHA1(in, inlen, out);
 }
-#endif      /* ndef OPENSSL_NO_EC */
-
+#endif                          /* OPENSSL_NO_EC */
 
 static int run_benchmark(int async_jobs,
                          int (*loop_function)(void *), loopargs_t *loopargs)
@@ -1359,7 +1358,7 @@ int speed_main(int argc, char **argv)
 
     int ecdsa_doit[EC_NUM] = { 0 };
     int ecdh_doit[EC_NUM] = { 0 };
-#endif  /* ndef OPENSSL_NO_EC */
+#endif                          /* ndef OPENSSL_NO_EC */
 
     prog = opt_init(argc, argv, speed_options);
     while ((o = opt_next()) != OPT_EOF) {
@@ -1431,6 +1430,12 @@ int speed_main(int argc, char **argv)
             break;
         case OPT_MB:
             multiblock = 1;
+#ifdef OPENSSL_NO_MULTIBLOCK
+            BIO_printf(bio_err,
+                       "%s: -mb specified but multi-block support is disabled\n",
+                       prog);
+            goto end;
+#endif
             break;
         }
     }
@@ -1565,8 +1570,10 @@ int speed_main(int argc, char **argv)
         for (i = 0; i < ALGOR_NUM; i++)
             if (i != D_EVP)
                 doit[i] = 1;
+#ifndef OPENSSL_NO_RSA
         for (i = 0; i < RSA_NUM; i++)
             rsa_doit[i] = 1;
+#endif
 #ifndef OPENSSL_NO_DSA
         for (i = 0; i < DSA_NUM; i++)
             dsa_doit[i] = 1;
@@ -1895,11 +1902,9 @@ int speed_main(int argc, char **argv)
             print_result(D_MD5, testnum, count, d);
         }
     }
-#endif
 
-#ifndef OPENSSL_NO_MD5
     if (doit[D_HMAC]) {
-        char hmac_key[] = "This is a key...";
+        static const char hmac_key[] = "This is a key...";
         int len = strlen(hmac_key);
 
         for (i = 0; i < loopargs_len; i++) {
@@ -2087,13 +2092,14 @@ int speed_main(int argc, char **argv)
 
 #ifndef OPENSSL_NO_CAMELLIA
     if (doit[D_CBC_128_CML]) {
-        for (testnum = 0; testnum < SIZE_NUM; testnum++) {
+        if (async_jobs > 0) {
+            BIO_printf(bio_err, "Async mode is not supported with %s\n",
+                       names[D_CBC_128_CML]);
+            doit[D_CBC_128_CML] = 0;
+        }
+        for (testnum = 0; testnum < SIZE_NUM && async_init == 0; testnum++) {
             print_message(names[D_CBC_128_CML], c[D_CBC_128_CML][testnum],
                           lengths[testnum]);
-            if (async_jobs > 0) {
-                BIO_printf(bio_err, "Async mode is not supported, exiting...");
-                exit(1);
-            }
             Time_F(START);
             for (count = 0, run = 1; COND(c[D_CBC_128_CML][testnum]); count++)
                 Camellia_cbc_encrypt(loopargs[0].buf, loopargs[0].buf,
@@ -2104,7 +2110,12 @@ int speed_main(int argc, char **argv)
         }
     }
     if (doit[D_CBC_192_CML]) {
-        for (testnum = 0; testnum < SIZE_NUM; testnum++) {
+        if (async_jobs > 0) {
+            BIO_printf(bio_err, "Async mode is not supported with %s\n",
+                       names[D_CBC_192_CML]);
+            doit[D_CBC_192_CML] = 0;
+        }
+        for (testnum = 0; testnum < SIZE_NUM && async_init == 0; testnum++) {
             print_message(names[D_CBC_192_CML], c[D_CBC_192_CML][testnum],
                           lengths[testnum]);
             if (async_jobs > 0) {
@@ -2121,13 +2132,14 @@ int speed_main(int argc, char **argv)
         }
     }
     if (doit[D_CBC_256_CML]) {
-        for (testnum = 0; testnum < SIZE_NUM; testnum++) {
+        if (async_jobs > 0) {
+            BIO_printf(bio_err, "Async mode is not supported with %s\n",
+                       names[D_CBC_256_CML]);
+            doit[D_CBC_256_CML] = 0;
+        }
+        for (testnum = 0; testnum < SIZE_NUM && async_init == 0; testnum++) {
             print_message(names[D_CBC_256_CML], c[D_CBC_256_CML][testnum],
                           lengths[testnum]);
-            if (async_jobs > 0) {
-                BIO_printf(bio_err, "Async mode is not supported, exiting...");
-                exit(1);
-            }
             Time_F(START);
             for (count = 0, run = 1; COND(c[D_CBC_256_CML][testnum]); count++)
                 Camellia_cbc_encrypt(loopargs[0].buf, loopargs[0].buf,
@@ -2140,12 +2152,13 @@ int speed_main(int argc, char **argv)
 #endif
 #ifndef OPENSSL_NO_IDEA
     if (doit[D_CBC_IDEA]) {
-        for (testnum = 0; testnum < SIZE_NUM; testnum++) {
+        if (async_jobs > 0) {
+            BIO_printf(bio_err, "Async mode is not supported with %s\n",
+                       names[D_CBC_IDEA]);
+            doit[D_CBC_IDEA] = 0;
+        }
+        for (testnum = 0; testnum < SIZE_NUM && async_init == 0; testnum++) {
             print_message(names[D_CBC_IDEA], c[D_CBC_IDEA][testnum], lengths[testnum]);
-            if (async_jobs > 0) {
-                BIO_printf(bio_err, "Async mode is not supported, exiting...");
-                exit(1);
-            }
             Time_F(START);
             for (count = 0, run = 1; COND(c[D_CBC_IDEA][testnum]); count++)
                 IDEA_cbc_encrypt(loopargs[0].buf, loopargs[0].buf,
@@ -2158,12 +2171,13 @@ int speed_main(int argc, char **argv)
 #endif
 #ifndef OPENSSL_NO_SEED
     if (doit[D_CBC_SEED]) {
-        for (testnum = 0; testnum < SIZE_NUM; testnum++) {
+        if (async_jobs > 0) {
+            BIO_printf(bio_err, "Async mode is not supported with %s\n",
+                       names[D_CBC_SEED]);
+            doit[D_CBC_SEED] = 0;
+        }
+        for (testnum = 0; testnum < SIZE_NUM && async_init == 0; testnum++) {
             print_message(names[D_CBC_SEED], c[D_CBC_SEED][testnum], lengths[testnum]);
-            if (async_jobs > 0) {
-                BIO_printf(bio_err, "Async mode is not supported, exiting...");
-                exit(1);
-            }
             Time_F(START);
             for (count = 0, run = 1; COND(c[D_CBC_SEED][testnum]); count++)
                 SEED_cbc_encrypt(loopargs[0].buf, loopargs[0].buf,
@@ -2175,7 +2189,12 @@ int speed_main(int argc, char **argv)
 #endif
 #ifndef OPENSSL_NO_RC2
     if (doit[D_CBC_RC2]) {
-        for (testnum = 0; testnum < SIZE_NUM; testnum++) {
+        if (async_jobs > 0) {
+            BIO_printf(bio_err, "Async mode is not supported with %s\n",
+                       names[D_CBC_RC2]);
+            doit[D_CBC_RC2] = 0;
+        }
+        for (testnum = 0; testnum < SIZE_NUM && async_init == 0; testnum++) {
             print_message(names[D_CBC_RC2], c[D_CBC_RC2][testnum], lengths[testnum]);
             if (async_jobs > 0) {
                 BIO_printf(bio_err, "Async mode is not supported, exiting...");
@@ -2193,7 +2212,12 @@ int speed_main(int argc, char **argv)
 #endif
 #ifndef OPENSSL_NO_RC5
     if (doit[D_CBC_RC5]) {
-        for (testnum = 0; testnum < SIZE_NUM; testnum++) {
+        if (async_jobs > 0) {
+            BIO_printf(bio_err, "Async mode is not supported with %s\n",
+                       names[D_CBC_RC5]);
+            doit[D_CBC_RC5] = 0;
+        }
+        for (testnum = 0; testnum < SIZE_NUM && async_init == 0; testnum++) {
             print_message(names[D_CBC_RC5], c[D_CBC_RC5][testnum], lengths[testnum]);
             if (async_jobs > 0) {
                 BIO_printf(bio_err, "Async mode is not supported, exiting...");
@@ -2211,12 +2235,13 @@ int speed_main(int argc, char **argv)
 #endif
 #ifndef OPENSSL_NO_BF
     if (doit[D_CBC_BF]) {
-        for (testnum = 0; testnum < SIZE_NUM; testnum++) {
+        if (async_jobs > 0) {
+            BIO_printf(bio_err, "Async mode is not supported with %s\n",
+                       names[D_CBC_BF]);
+            doit[D_CBC_BF] = 0;
+        }
+        for (testnum = 0; testnum < SIZE_NUM && async_init == 0; testnum++) {
             print_message(names[D_CBC_BF], c[D_CBC_BF][testnum], lengths[testnum]);
-            if (async_jobs > 0) {
-                BIO_printf(bio_err, "Async mode is not supported, exiting...");
-                exit(1);
-            }
             Time_F(START);
             for (count = 0, run = 1; COND(c[D_CBC_BF][testnum]); count++)
                 BF_cbc_encrypt(loopargs[0].buf, loopargs[0].buf,
@@ -2229,12 +2254,13 @@ int speed_main(int argc, char **argv)
 #endif
 #ifndef OPENSSL_NO_CAST
     if (doit[D_CBC_CAST]) {
-        for (testnum = 0; testnum < SIZE_NUM; testnum++) {
+        if (async_jobs > 0) {
+            BIO_printf(bio_err, "Async mode is not supported with %s\n",
+                       names[D_CBC_CAST]);
+            doit[D_CBC_CAST] = 0;
+        }
+        for (testnum = 0; testnum < SIZE_NUM && async_init == 0; testnum++) {
             print_message(names[D_CBC_CAST], c[D_CBC_CAST][testnum], lengths[testnum]);
-            if (async_jobs > 0) {
-                BIO_printf(bio_err, "Async mode is not supported, exiting...");
-                exit(1);
-            }
             Time_F(START);
             for (count = 0, run = 1; COND(c[D_CBC_CAST][testnum]); count++)
                 CAST_cbc_encrypt(loopargs[0].buf, loopargs[0].buf,
@@ -2366,7 +2392,7 @@ int speed_main(int argc, char **argv)
                 rsa_doit[testnum] = 0;
         }
     }
-#endif
+#endif                          /* OPENSSL_NO_RSA */
 
     for (i = 0; i < loopargs_len; i++)
         RAND_bytes(loopargs[i].buf, 36);
@@ -2437,7 +2463,7 @@ int speed_main(int argc, char **argv)
                 dsa_doit[testnum] = 0;
         }
     }
-#endif
+#endif                          /* OPENSSL_NO_DSA */
 
 #ifndef OPENSSL_NO_EC
     if (RAND_status() != 1) {
@@ -2619,7 +2645,7 @@ int speed_main(int argc, char **argv)
                 ecdh_doit[testnum] = 0;
         }
     }
-#endif
+#endif                          /* OPENSSL_NO_EC */
 #ifndef NO_FORK
  show_res:
 #endif
@@ -2991,11 +3017,7 @@ static int do_multi(int multi)
                         1 / (1 / ecdsa_results[k][1] + 1 / d);
                 else
                     ecdsa_results[k][1] = d;
-            }
-# endif
-
-# ifndef OPENSSL_NO_EC
-            else if (strncmp(buf, "+F5:", 4) == 0) {
+            } else if (strncmp(buf, "+F5:", 4) == 0) {
                 int k;
                 double d;
 
