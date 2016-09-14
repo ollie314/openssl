@@ -57,6 +57,21 @@ int ssl3_do_write(SSL *s, int type)
     return (0);
 }
 
+int tls_close_construct_packet(SSL *s, WPACKET *pkt)
+{
+    size_t msglen;
+
+    if (!WPACKET_close(pkt)
+            || !WPACKET_get_length(pkt, &msglen)
+            || msglen > INT_MAX
+            || !WPACKET_finish(pkt))
+        return 0;
+    s->init_num = (int)msglen;
+    s->init_off = 0;
+
+    return 1;
+}
+
 int tls_construct_finished(SSL *s, const char *sender, int slen)
 {
     unsigned char *p;
@@ -331,6 +346,7 @@ WORK_STATE tls_finish_handshake(SSL *s, WORK_STATE wst)
             s->d1->handshake_read_seq = 0;
             s->d1->handshake_write_seq = 0;
             s->d1->next_handshake_write_seq = 0;
+            dtls1_clear_received_buffer(s);
         }
     }
 

@@ -19,7 +19,6 @@
 #include <ctype.h>
 
 CRYPTO_RWLOCK *bio_lookup_lock;
-extern CRYPTO_RWLOCK  *bio_type_lock;
 static CRYPTO_ONCE bio_lookup_init = CRYPTO_ONCE_STATIC_INIT;
 
 /*
@@ -605,9 +604,9 @@ static int addrinfo_wrap(int family, int socktype,
 
 DEFINE_RUN_ONCE_STATIC(do_bio_lookup_init)
 {
+    OPENSSL_init_crypto(0, NULL);
     bio_lookup_lock = CRYPTO_THREAD_lock_new();
-    bio_type_lock = CRYPTO_THREAD_lock_new();
-    return bio_lookup_lock != NULL && bio_type_lock != NULL;
+    return bio_lookup_lock != NULL;
 }
 
 /*-

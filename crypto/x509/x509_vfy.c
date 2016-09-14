@@ -974,10 +974,10 @@ static int get_crl_sk(X509_STORE_CTX *ctx, X509_CRL **pcrl, X509_CRL **pdcrl,
         crl = sk_X509_CRL_value(crls, i);
         reasons = *preasons;
         crl_score = get_crl_score(ctx, &crl_issuer, &reasons, crl, x);
-        if (crl_score < best_score)
+        if (crl_score < best_score || crl_score == 0)
             continue;
         /* If current CRL is equivalent use it if it is newer */
-        if (crl_score == best_score) {
+        if (crl_score == best_score && best_crl != NULL) {
             int day, sec;
             if (ASN1_TIME_diff(&day, &sec, X509_CRL_get0_lastUpdate(best_crl),
                                X509_CRL_get0_lastUpdate(crl)) == 0)
@@ -2438,6 +2438,12 @@ void X509_STORE_CTX_set_verify_cb(X509_STORE_CTX *ctx,
 X509_STORE_CTX_verify_cb X509_STORE_CTX_get_verify_cb(X509_STORE_CTX *ctx)
 {
     return ctx->verify_cb;
+}
+
+void X509_STORE_CTX_set_verify(X509_STORE_CTX *ctx,
+                               X509_STORE_CTX_verify_fn verify)
+{
+    ctx->verify = verify;
 }
 
 X509_STORE_CTX_verify_fn X509_STORE_CTX_get_verify(X509_STORE_CTX *ctx)

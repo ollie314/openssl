@@ -25,7 +25,6 @@
 # include <openssl/txt_db.h>
 # include <openssl/engine.h>
 # include <openssl/ocsp.h>
-# include <openssl/ossl_typ.h>
 # include <signal.h>
 
 # if defined(OPENSSL_SYS_WIN32) || defined(OPENSSL_SYS_WINCE)
@@ -457,9 +456,10 @@ int unpack_revinfo(ASN1_TIME **prevtm, int *preason, ASN1_OBJECT **phold,
                                  * disabled */
 # define DB_NUMBER       6
 
-# define DB_TYPE_REV     'R'
-# define DB_TYPE_EXP     'E'
-# define DB_TYPE_VAL     'V'
+# define DB_TYPE_REV     'R'    /* Revoked  */
+# define DB_TYPE_EXP     'E'    /* Expired  */
+# define DB_TYPE_VAL     'V'    /* Valid ; inserted with: ca ... -valid */
+# define DB_TYPE_SUSP    'S'    /* Suspended  */
 
 typedef struct db_attr_st {
     int unique_subject;

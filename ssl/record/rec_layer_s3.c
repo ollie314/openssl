@@ -1159,12 +1159,6 @@ int ssl3_read_bytes(SSL *s, int type, int *recvd_type, unsigned char *buf,
      * were actually expecting a CCS).
      */
 
-    if (rr->type == SSL3_RT_HANDSHAKE && type == SSL3_RT_CHANGE_CIPHER_SPEC) {
-        al = SSL_AD_UNEXPECTED_MESSAGE;
-        SSLerr(SSL_F_SSL3_READ_BYTES, SSL_R_UNEXPECTED_MESSAGE);
-        goto f_err;
-    }
-
     /*
      * Lets just double check that we've not got an SSLv2 record
      */
@@ -1357,9 +1351,15 @@ int ssl3_read_bytes(SSL *s, int type, int *recvd_type, unsigned char *buf,
                 goto f_err;
             }
 #ifdef SSL_AD_MISSING_SRP_USERNAME
-            else if (alert_descr == SSL_AD_MISSING_SRP_USERNAME)
-                return (0);
+            else if (alert_descr == SSL_AD_MISSING_SRP_USERNAME) {
+                return 0;
+            }
 #endif
+            else {
+                al = SSL_AD_HANDSHAKE_FAILURE;
+                SSLerr(SSL_F_SSL3_READ_BYTES, SSL_R_UNKNOWN_ALERT_TYPE);
+                goto f_err;
+            }
         } else if (alert_level == SSL3_AL_FATAL) {
             char tmp[16];
 

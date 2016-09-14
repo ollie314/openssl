@@ -667,6 +667,9 @@
 
      Please send bug reports to <rt@openssl.org>.
 
+     For more details on how the make variables TESTS can be used,
+     see section TESTS in Detail below.
+
   4. If everything tests ok, install OpenSSL with
 
        $ make install                                   # Unix
@@ -770,6 +773,13 @@
  AR
                 The name of the ar executable to use.
 
+ BUILDFILE
+                Use a different build file name than the platform default
+                ("Makefile" on Unixly platforms, "makefile" on native Windows,
+                "descrip.mms" on OpenVMS).  This requires that there is a
+                corresponding build file template.  See Configurations/README
+                for further information.
+
  CC
                 The compiler to use. Configure will attempt to pick a default
                 compiler for your platform but this choice can be overridden
@@ -786,16 +796,25 @@
 
  OPENSSL_LOCAL_CONFIG_DIR
                 OpenSSL comes with a database of information about how it
-                should be built on different platforms. This information is
-                held in ".conf" files in the Configurations directory. See the
+                should be built on different platforms as well as build file
+                templates for those platforms. The database is comprised of
+                ".conf" files in the Configurations directory.  The build
+                file templates reside there as well as ".tmpl" files. See the
                 file Configurations/README for further information about the
-                format of ".conf" files. As well as the standard ".conf" files
-                it is possible to create your own ".conf" files and store them
-                locally, outside the OpenSSL source tree. This environment
-                variable can be set to the directory where these files are held.
+                format of ".conf" files as well as information on the ".tmpl"
+                files.
+                In addition to the standard ".conf" and ".tmpl" files, it is
+                possible to create your own ".conf" and ".tmpl" files and store
+                them locally, outside the OpenSSL source tree. This environment
+                variable can be set to the directory where these files are held
+                and will have Configure to consider them in addition to the
+                standard ones.
 
  PERL
                 The name of the Perl executable to use when building OpenSSL.
+                This variable is used in config script only. Configure on the
+                other hand imposes the interpreter by which it itself was
+                executed on the whole build procedure.
 
  HASHBANGPERL
                 The command string for the Perl executable to insert in the
@@ -865,6 +884,38 @@
                 OpenSSL you may need to use this if you want to update
                 automatically generated files; add new error codes or add new
                 (or change the visibility of) public API functions. (Unix only).
+
+ TESTS in Detail
+ ---------------
+
+ The make variable TESTS supports a versatile set of space separated tokens
+ with which you can specify a set of tests to be performed.  With a "current
+ set of tests" in mind, initially being empty, here are the possible tokens:
+
+ alltests       The current set of tests becomes the whole set of available
+                tests (as listed when you do 'make list-tests' or similar).
+ xxx            Adds the test 'xxx' to the current set of tests.
+ -xxx           Removes 'xxx' from the current set of tests.  If this is the
+                first token in the list, the current set of tests is first
+                assigned the whole set of available tests, effectively making
+                this token equivalent to TESTS="alltests -xxx"
+
+ Also, all tokens except for "alltests" may have wildcards, such as *.
+ (on Unix and Windows, BSD style wildcards are supported, while on VMS,
+ it's VMS style wildcards)
+
+ Example: All tests except for the fuzz tests:
+
+ $ make TESTS=-test_fuzz test
+
+ or (if you want to be explicit)
+
+ $ make TESTS='alltests -test_fuzz' test
+
+ Example: All tests that have a name starting with "test_ssl" but not those
+ starting with "test_ssl_":
+
+ $ make TESTS='test_ssl* -test_ssl_*' test
 
  Note on multi-threading
  -----------------------

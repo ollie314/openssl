@@ -63,7 +63,7 @@ static ossl_inline int cert_req_allowed(SSL *s);
 static int key_exchange_expected(SSL *s);
 static int ca_dn_cmp(const X509_NAME *const *a, const X509_NAME *const *b);
 static int ssl_cipher_list_to_bytes(SSL *s, STACK_OF(SSL_CIPHER) *sk,
-                                    unsigned char *p);
+                                    WPACKET *pkt);
 
 /*
  * Is a CertificateRequest message allowed at the moment or not?
@@ -689,19 +689,22 @@ WORK_STATE ossl_statem_client_post_process_message(SSL *s, WORK_STATE wst)
 
 int tls_construct_client_hello(SSL *s)
 {
-    unsigned char *buf;
-    unsigned char *p, *d;
+    unsigned char *p;
     int i;
     int protverr;
-    unsigned long l;
-    int al = 0;
+    int al = SSL_AD_HANDSHAKE_FAILURE;
 #ifndef OPENSSL_NO_COMP
-    int j;
     SSL_COMP *comp;
 #endif
     SSL_SESSION *sess = s->session;
+    WPACKET pkt;
 
-    buf = (unsigned char *)s->init_buf->data;
+    if (!WPACKET_init(&pkt, s->init_buf)
+            || !WPACKET_set_max_size(&pkt, SSL3_RT_MAX_PLAIN_LENGTH)) {
+        /* Should not happen */
+        SSLerr(SSL_F_TLS_CONSTRUCT_CLIENT_HELLO, ERR_R_INTERNAL_ERROR);
+        goto err;
+    }
 
     /* Work out what SSL/TLS/DTLS version to use */
     protverr = ssl_set_client_hello_version(s);
@@ -743,8 +746,11 @@ int tls_construct_client_hello(SSL *s)
     if (i && ssl_fill_hello_random(s, 0, p, sizeof(s->s3->client_random)) <= 0)
         goto err;
 
-    /* Do the message type and length last */
-    d = p = ssl_handshake_start(s);
+    if (!ssl_set_handshake_header2(s, &pkt, SSL3_MT_CLIENT_HELLO)) {
+        ssl3_send_alert(s, SSL3_AL_FATAL, SSL_AD_HANDSHAKE_FAILURE);
+        SSLerr(SSL_F_TLS_CONSTRUCT_CLIENT_HELLO, ERR_R_INTERNAL_ERROR);
+        goto err;
+    }
 
     /*-
      * version indicates the negotiated version: for example from
@@ -776,90 +782,90 @@ int tls_construct_client_hello(SSL *s)
      * client_version in client hello and not resetting it to
      * the negotiated version.
      */
-    *(p++) = s->client_version >> 8;
-    *(p++) = s->client_version & 0xff;
-
-    /* Random stuff */
-    memcpy(p, s->s3->client_random, SSL3_RANDOM_SIZE);
-    p += SSL3_RANDOM_SIZE;
+    if (!WPACKET_put_bytes(&pkt, s->client_version, 2)
+            || !WPACKET_memcpy(&pkt, s->s3->client_random, SSL3_RANDOM_SIZE)) {
+        SSLerr(SSL_F_TLS_CONSTRUCT_CLIENT_HELLO, ERR_R_INTERNAL_ERROR);
+        goto err;
+    }
 
     /* Session ID */
     if (s->new_session)
         i = 0;
     else
         i = s->session->session_id_length;
-    *(p++) = i;
-    if (i != 0) {
-        if (i > (int)sizeof(s->session->session_id)) {
-            SSLerr(SSL_F_TLS_CONSTRUCT_CLIENT_HELLO, ERR_R_INTERNAL_ERROR);
-            goto err;
-        }
-        memcpy(p, s->session->session_id, i);
-        p += i;
+    if (i > (int)sizeof(s->session->session_id)
+            || !WPACKET_start_sub_packet_u8(&pkt)
+            || (i != 0 && !WPACKET_memcpy(&pkt, s->session->session_id, i))
+            || !WPACKET_close(&pkt)) {
+        SSLerr(SSL_F_TLS_CONSTRUCT_CLIENT_HELLO, ERR_R_INTERNAL_ERROR);
+        goto err;
     }
 
     /* cookie stuff for DTLS */
     if (SSL_IS_DTLS(s)) {
-        if (s->d1->cookie_len > sizeof(s->d1->cookie)) {
+        if (s->d1->cookie_len > sizeof(s->d1->cookie)
+                || !WPACKET_sub_memcpy_u8(&pkt, s->d1->cookie,
+                                          s->d1->cookie_len)) {
             SSLerr(SSL_F_TLS_CONSTRUCT_CLIENT_HELLO, ERR_R_INTERNAL_ERROR);
             goto err;
         }
-        *(p++) = s->d1->cookie_len;
-        memcpy(p, s->d1->cookie, s->d1->cookie_len);
-        p += s->d1->cookie_len;
     }
 
     /* Ciphers supported */
-    i = ssl_cipher_list_to_bytes(s, SSL_get_ciphers(s), &(p[2]));
-    if (i == 0) {
-        SSLerr(SSL_F_TLS_CONSTRUCT_CLIENT_HELLO, SSL_R_NO_CIPHERS_AVAILABLE);
+    if (!WPACKET_start_sub_packet_u16(&pkt)) {
+        SSLerr(SSL_F_TLS_CONSTRUCT_CLIENT_HELLO, ERR_R_INTERNAL_ERROR);
         goto err;
     }
-#ifdef OPENSSL_MAX_TLS1_2_CIPHER_LENGTH
-    /*
-     * Some servers hang if client hello > 256 bytes as hack workaround
-     * chop number of supported ciphers to keep it well below this if we
-     * use TLS v1.2
-     */
-    if (TLS1_get_version(s) >= TLS1_2_VERSION
-        && i > OPENSSL_MAX_TLS1_2_CIPHER_LENGTH)
-        i = OPENSSL_MAX_TLS1_2_CIPHER_LENGTH & ~1;
-#endif
-    s2n(i, p);
-    p += i;
+    /* ssl_cipher_list_to_bytes() raises SSLerr if appropriate */
+    if (!ssl_cipher_list_to_bytes(s, SSL_get_ciphers(s), &pkt))
+        goto err;
+    if (!WPACKET_close(&pkt)) {
+        SSLerr(SSL_F_TLS_CONSTRUCT_CLIENT_HELLO, ERR_R_INTERNAL_ERROR);
+        goto err;
+    }
 
     /* COMPRESSION */
-#ifdef OPENSSL_NO_COMP
-    *(p++) = 1;
-#else
-
-    if (!ssl_allow_compression(s) || !s->ctx->comp_methods)
-        j = 0;
-    else
-        j = sk_SSL_COMP_num(s->ctx->comp_methods);
-    *(p++) = 1 + j;
-    for (i = 0; i < j; i++) {
-        comp = sk_SSL_COMP_value(s->ctx->comp_methods, i);
-        *(p++) = comp->id;
+    if (!WPACKET_start_sub_packet_u8(&pkt)) {
+        SSLerr(SSL_F_TLS_CONSTRUCT_CLIENT_HELLO, ERR_R_INTERNAL_ERROR);
+        goto err;
+    }
+#ifndef OPENSSL_NO_COMP
+    if (ssl_allow_compression(s) && s->ctx->comp_methods) {
+        int compnum = sk_SSL_COMP_num(s->ctx->comp_methods);
+        for (i = 0; i < compnum; i++) {
+            comp = sk_SSL_COMP_value(s->ctx->comp_methods, i);
+            if (!WPACKET_put_bytes(&pkt, comp->id, 1)) {
+                SSLerr(SSL_F_TLS_CONSTRUCT_CLIENT_HELLO, ERR_R_INTERNAL_ERROR);
+                goto err;
+            }
+        }
     }
 #endif
-    *(p++) = 0;                 /* Add the NULL method */
+    /* Add the NULL method */
+    if (!WPACKET_put_bytes(&pkt, 0, 1) || !WPACKET_close(&pkt)) {
+        SSLerr(SSL_F_TLS_CONSTRUCT_CLIENT_HELLO, ERR_R_INTERNAL_ERROR);
+        goto err;
+    }
 
     /* TLS extensions */
     if (ssl_prepare_clienthello_tlsext(s) <= 0) {
         SSLerr(SSL_F_TLS_CONSTRUCT_CLIENT_HELLO, SSL_R_CLIENTHELLO_TLSEXT);
         goto err;
     }
-    if ((p =
-         ssl_add_clienthello_tlsext(s, p, buf + SSL3_RT_MAX_PLAIN_LENGTH,
-                                    &al)) == NULL) {
+    if (!WPACKET_start_sub_packet_u16(&pkt)
+               /*
+                * If extensions are of zero length then we don't even add the
+                * extensions length bytes
+                */
+            || !WPACKET_set_flags(&pkt, WPACKET_FLAGS_ABANDON_ON_ZERO_LENGTH)
+            || !ssl_add_clienthello_tlsext(s, &pkt, &al)
+            || !WPACKET_close(&pkt)) {
         ssl3_send_alert(s, SSL3_AL_FATAL, al);
         SSLerr(SSL_F_TLS_CONSTRUCT_CLIENT_HELLO, ERR_R_INTERNAL_ERROR);
         goto err;
     }
 
-    l = p - d;
-    if (!ssl_set_handshake_header(s, SSL3_MT_CLIENT_HELLO, l)) {
+    if (!ssl_close_construct_packet(s, &pkt)) {
         ssl3_send_alert(s, SSL3_AL_FATAL, SSL_AD_HANDSHAKE_FAILURE);
         SSLerr(SSL_F_TLS_CONSTRUCT_CLIENT_HELLO, ERR_R_INTERNAL_ERROR);
         goto err;
@@ -868,6 +874,7 @@ int tls_construct_client_hello(SSL *s)
     return 1;
  err:
     ossl_statem_set_error(s);
+    WPACKET_cleanup(&pkt);
     return 0;
 }
 
@@ -2064,8 +2071,7 @@ MSG_PROCESS_RETURN tls_process_server_done(SSL *s, PACKET *pkt)
         return MSG_PROCESS_FINISHED_READING;
 }
 
-static int tls_construct_cke_psk_preamble(SSL *s, unsigned char **p,
-                                          size_t *pskhdrlen, int *al)
+static int tls_construct_cke_psk_preamble(SSL *s, WPACKET *pkt, int *al)
 {
 #ifndef OPENSSL_NO_PSK
     int ret = 0;
@@ -2126,10 +2132,12 @@ static int tls_construct_cke_psk_preamble(SSL *s, unsigned char **p,
     OPENSSL_free(s->session->psk_identity);
     s->session->psk_identity = tmpidentity;
     tmpidentity = NULL;
-    s2n(identitylen, *p);
-    memcpy(*p, identity, identitylen);
-    *pskhdrlen = 2 + identitylen;
-    *p += identitylen;
+
+    if (!WPACKET_sub_memcpy_u16(pkt, identity, identitylen))  {
+        SSLerr(SSL_F_TLS_CONSTRUCT_CKE_PSK_PREAMBLE, ERR_R_INTERNAL_ERROR);
+        *al = SSL_AD_INTERNAL_ERROR;
+        goto err;
+    }
 
     ret = 1;
 
@@ -2147,10 +2155,10 @@ static int tls_construct_cke_psk_preamble(SSL *s, unsigned char **p,
 #endif
 }
 
-static int tls_construct_cke_rsa(SSL *s, unsigned char **p, int *len, int *al)
+static int tls_construct_cke_rsa(SSL *s, WPACKET *pkt, int *al)
 {
 #ifndef OPENSSL_NO_RSA
-    unsigned char *q;
+    unsigned char *encdata = NULL;
     EVP_PKEY *pkey = NULL;
     EVP_PKEY_CTX *pctx = NULL;
     size_t enclen;
@@ -2185,21 +2193,22 @@ static int tls_construct_cke_rsa(SSL *s, unsigned char **p, int *len, int *al)
         goto err;
     }
 
-    q = *p;
     /* Fix buf for TLS and beyond */
-    if (s->version > SSL3_VERSION)
-        *p += 2;
+    if (s->version > SSL3_VERSION && !WPACKET_start_sub_packet_u16(pkt)) {
+        SSLerr(SSL_F_TLS_CONSTRUCT_CKE_RSA, ERR_R_INTERNAL_ERROR);
+        goto err;
+    }
     pctx = EVP_PKEY_CTX_new(pkey, NULL);
     if (pctx == NULL || EVP_PKEY_encrypt_init(pctx) <= 0
         || EVP_PKEY_encrypt(pctx, NULL, &enclen, pms, pmslen) <= 0) {
         SSLerr(SSL_F_TLS_CONSTRUCT_CKE_RSA, ERR_R_EVP_LIB);
         goto err;
     }
-    if (EVP_PKEY_encrypt(pctx, *p, &enclen, pms, pmslen) <= 0) {
+    if (!WPACKET_allocate_bytes(pkt, enclen, &encdata)
+            || EVP_PKEY_encrypt(pctx, encdata, &enclen, pms, pmslen) <= 0) {
         SSLerr(SSL_F_TLS_CONSTRUCT_CKE_RSA, SSL_R_BAD_RSA_ENCRYPT);
         goto err;
     }
-    *len = enclen;
     EVP_PKEY_CTX_free(pctx);
     pctx = NULL;
 # ifdef PKCS1_CHECK
@@ -2210,9 +2219,9 @@ static int tls_construct_cke_rsa(SSL *s, unsigned char **p, int *len, int *al)
 # endif
 
     /* Fix buf for TLS and beyond */
-    if (s->version > SSL3_VERSION) {
-        s2n(*len, q);
-        *len += 2;
+    if (s->version > SSL3_VERSION && !WPACKET_close(pkt)) {
+        SSLerr(SSL_F_TLS_CONSTRUCT_CKE_RSA, ERR_R_INTERNAL_ERROR);
+        goto err;
     }
 
     s->s3->tmp.pms = pms;
@@ -2231,49 +2240,48 @@ static int tls_construct_cke_rsa(SSL *s, unsigned char **p, int *len, int *al)
 #endif
 }
 
-static int tls_construct_cke_dhe(SSL *s, unsigned char **p, int *len, int *al)
+static int tls_construct_cke_dhe(SSL *s, WPACKET *pkt, int *al)
 {
 #ifndef OPENSSL_NO_DH
     DH *dh_clnt = NULL;
     const BIGNUM *pub_key;
     EVP_PKEY *ckey = NULL, *skey = NULL;
+    unsigned char *keybytes = NULL;
 
     skey = s->s3->peer_tmp;
-    if (skey == NULL) {
-        SSLerr(SSL_F_TLS_CONSTRUCT_CKE_DHE, ERR_R_INTERNAL_ERROR);
-        return 0;
-    }
+    if (skey == NULL)
+        goto err;
+
     ckey = ssl_generate_pkey(skey);
     dh_clnt = EVP_PKEY_get0_DH(ckey);
 
-    if (dh_clnt == NULL || ssl_derive(s, ckey, skey) == 0) {
-        SSLerr(SSL_F_TLS_CONSTRUCT_CKE_DHE, ERR_R_INTERNAL_ERROR);
-        EVP_PKEY_free(ckey);
-        return 0;
-    }
+    if (dh_clnt == NULL || ssl_derive(s, ckey, skey) == 0)
+        goto err;
 
     /* send off the data */
     DH_get0_key(dh_clnt, &pub_key, NULL);
-    *len = BN_num_bytes(pub_key);
-    s2n(*len, *p);
-    BN_bn2bin(pub_key, *p);
-    *len += 2;
+    if (!WPACKET_sub_allocate_bytes_u16(pkt, BN_num_bytes(pub_key), &keybytes))
+        goto err;
+
+    BN_bn2bin(pub_key, keybytes);
     EVP_PKEY_free(ckey);
 
     return 1;
-#else
+ err:
+    EVP_PKEY_free(ckey);
+#endif
     SSLerr(SSL_F_TLS_CONSTRUCT_CKE_DHE, ERR_R_INTERNAL_ERROR);
     *al = SSL_AD_INTERNAL_ERROR;
     return 0;
-#endif
 }
 
-static int tls_construct_cke_ecdhe(SSL *s, unsigned char **p, int *len, int *al)
+static int tls_construct_cke_ecdhe(SSL *s, WPACKET *pkt, int *al)
 {
 #ifndef OPENSSL_NO_EC
     unsigned char *encodedPoint = NULL;
     int encoded_pt_len = 0;
     EVP_PKEY *ckey = NULL, *skey = NULL;
+    int ret = 0;
 
     skey = s->s3->peer_tmp;
     if (skey == NULL) {
@@ -2296,25 +2304,16 @@ static int tls_construct_cke_ecdhe(SSL *s, unsigned char **p, int *len, int *al)
         goto err;
     }
 
-    EVP_PKEY_free(ckey);
-    ckey = NULL;
+    if (!WPACKET_sub_memcpy_u8(pkt, encodedPoint, encoded_pt_len)) {
+        SSLerr(SSL_F_TLS_CONSTRUCT_CKE_ECDHE, ERR_R_INTERNAL_ERROR);
+        goto err;
+    }
 
-    *len = encoded_pt_len;
-
-    /* length of encoded point */
-    **p = *len;
-    *p += 1;
-    /* copy the point */
-    memcpy(*p, encodedPoint, *len);
-    /* increment len to account for length field */
-    *len += 1;
-
-    OPENSSL_free(encodedPoint);
-
-    return 1;
+    ret = 1;
  err:
+    OPENSSL_free(encodedPoint);
     EVP_PKEY_free(ckey);
-    return 0;
+    return ret;
 #else
     SSLerr(SSL_F_TLS_CONSTRUCT_CKE_ECDHE, ERR_R_INTERNAL_ERROR);
     *al = SSL_AD_INTERNAL_ERROR;
@@ -2322,7 +2321,7 @@ static int tls_construct_cke_ecdhe(SSL *s, unsigned char **p, int *len, int *al)
 #endif
 }
 
-static int tls_construct_cke_gost(SSL *s, unsigned char **p, int *len, int *al)
+static int tls_construct_cke_gost(SSL *s, WPACKET *pkt, int *al)
 {
 #ifndef OPENSSL_NO_GOST
     /* GOST key exchange message creation */
@@ -2368,7 +2367,7 @@ static int tls_construct_cke_gost(SSL *s, unsigned char **p, int *len, int *al)
     if (pms == NULL) {
         *al = SSL_AD_INTERNAL_ERROR;
         SSLerr(SSL_F_TLS_CONSTRUCT_CKE_GOST, ERR_R_MALLOC_FAILURE);
-        return 0;
+        goto err;
     }
 
     if (EVP_PKEY_encrypt_init(pkey_ctx) <= 0
@@ -2418,22 +2417,21 @@ static int tls_construct_cke_gost(SSL *s, unsigned char **p, int *len, int *al)
     /*
      * Encapsulate it into sequence
      */
-    *((*p)++) = V_ASN1_SEQUENCE | V_ASN1_CONSTRUCTED;
     msglen = 255;
     if (EVP_PKEY_encrypt(pkey_ctx, tmp, &msglen, pms, pmslen) <= 0) {
         *al = SSL_AD_INTERNAL_ERROR;
         SSLerr(SSL_F_TLS_CONSTRUCT_CKE_GOST, SSL_R_LIBRARY_BUG);
         goto err;
     }
-    if (msglen >= 0x80) {
-        *((*p)++) = 0x81;
-        *((*p)++) = msglen & 0xff;
-        *len = msglen + 3;
-    } else {
-        *((*p)++) = msglen & 0xff;
-        *len = msglen + 2;
+
+    if (!WPACKET_put_bytes(pkt, V_ASN1_SEQUENCE | V_ASN1_CONSTRUCTED, 1)
+            || (msglen >= 0x80 && !WPACKET_put_bytes(pkt, 0x81, 1))
+            || !WPACKET_sub_memcpy_u8(pkt, tmp, msglen)) {
+        *al = SSL_AD_INTERNAL_ERROR;
+        SSLerr(SSL_F_TLS_CONSTRUCT_CKE_GOST, ERR_R_INTERNAL_ERROR);
+        goto err;
     }
-    memcpy(*p, tmp, msglen);
+
     /* Check if pubkey from client certificate was used */
     if (EVP_PKEY_CTX_ctrl(pkey_ctx, -1, -1, EVP_PKEY_CTRL_PEER_KEY, 2,
                           NULL) > 0) {
@@ -2457,19 +2455,19 @@ static int tls_construct_cke_gost(SSL *s, unsigned char **p, int *len, int *al)
 #endif
 }
 
-static int tls_construct_cke_srp(SSL *s, unsigned char **p, int *len, int *al)
+static int tls_construct_cke_srp(SSL *s, WPACKET *pkt, int *al)
 {
 #ifndef OPENSSL_NO_SRP
-    if (s->srp_ctx.A != NULL) {
-        /* send off the data */
-        *len = BN_num_bytes(s->srp_ctx.A);
-        s2n(*len, *p);
-        BN_bn2bin(s->srp_ctx.A, *p);
-        *len += 2;
-    } else {
+    unsigned char *abytes = NULL;
+
+    if (s->srp_ctx.A == NULL
+            || !WPACKET_sub_allocate_bytes_u16(pkt, BN_num_bytes(s->srp_ctx.A),
+                                               &abytes)) {
         SSLerr(SSL_F_TLS_CONSTRUCT_CKE_SRP, ERR_R_INTERNAL_ERROR);
         return 0;
     }
+    BN_bn2bin(s->srp_ctx.A, abytes);
+
     OPENSSL_free(s->session->srp_username);
     s->session->srp_username = OPENSSL_strdup(s->srp_ctx.login);
     if (s->session->srp_username == NULL) {
@@ -2487,36 +2485,42 @@ static int tls_construct_cke_srp(SSL *s, unsigned char **p, int *len, int *al)
 
 int tls_construct_client_key_exchange(SSL *s)
 {
-    unsigned char *p;
-    int len;
-    size_t pskhdrlen = 0;
     unsigned long alg_k;
     int al = -1;
+    WPACKET pkt;
+
+    if (!WPACKET_init(&pkt, s->init_buf)) {
+        /* Should not happen */
+        SSLerr(SSL_F_TLS_CONSTRUCT_CLIENT_KEY_EXCHANGE, ERR_R_INTERNAL_ERROR);
+        goto err;
+    }
+
+    if (!ssl_set_handshake_header2(s, &pkt, SSL3_MT_CLIENT_KEY_EXCHANGE)) {
+        ssl3_send_alert(s, SSL3_AL_FATAL, SSL_AD_HANDSHAKE_FAILURE);
+        SSLerr(SSL_F_TLS_CONSTRUCT_CLIENT_KEY_EXCHANGE, ERR_R_INTERNAL_ERROR);
+        goto err;
+    }
 
     alg_k = s->s3->tmp.new_cipher->algorithm_mkey;
 
-    p = ssl_handshake_start(s);
-
     if ((alg_k & SSL_PSK)
-        && !tls_construct_cke_psk_preamble(s, &p, &pskhdrlen, &al))
+        && !tls_construct_cke_psk_preamble(s, &pkt, &al))
         goto err;
 
-    if (alg_k & SSL_kPSK) {
-        len = 0;
-    } else if (alg_k & (SSL_kRSA | SSL_kRSAPSK)) {
-        if (!tls_construct_cke_rsa(s, &p, &len, &al))
+    if (alg_k & (SSL_kRSA | SSL_kRSAPSK)) {
+        if (!tls_construct_cke_rsa(s, &pkt, &al))
             goto err;
     } else if (alg_k & (SSL_kDHE | SSL_kDHEPSK)) {
-        if (!tls_construct_cke_dhe(s, &p, &len, &al))
+        if (!tls_construct_cke_dhe(s, &pkt, &al))
             goto err;
     } else if (alg_k & (SSL_kECDHE | SSL_kECDHEPSK)) {
-        if (!tls_construct_cke_ecdhe(s, &p, &len, &al))
+        if (!tls_construct_cke_ecdhe(s, &pkt, &al))
             goto err;
     } else if (alg_k & SSL_kGOST) {
-        if (!tls_construct_cke_gost(s, &p, &len, &al))
+        if (!tls_construct_cke_gost(s, &pkt, &al))
             goto err;
     } else if (alg_k & SSL_kSRP) {
-        if (!tls_construct_cke_srp(s, &p, &len, &al))
+        if (!tls_construct_cke_srp(s, &pkt, &al))
             goto err;
     } else {
         ssl3_send_alert(s, SSL3_AL_FATAL, SSL_AD_HANDSHAKE_FAILURE);
@@ -2524,9 +2528,7 @@ int tls_construct_client_key_exchange(SSL *s)
         goto err;
     }
 
-    len += pskhdrlen;
-
-    if (!ssl_set_handshake_header(s, SSL3_MT_CLIENT_KEY_EXCHANGE, len)) {
+    if (!ssl_close_construct_packet(s, &pkt)) {
         ssl3_send_alert(s, SSL3_AL_FATAL, SSL_AD_HANDSHAKE_FAILURE);
         SSLerr(SSL_F_TLS_CONSTRUCT_CLIENT_KEY_EXCHANGE, ERR_R_INTERNAL_ERROR);
         goto err;
@@ -2542,6 +2544,7 @@ int tls_construct_client_key_exchange(SSL *s)
     OPENSSL_clear_free(s->s3->tmp.psk, s->s3->tmp.psklen);
     s->s3->tmp.psk = NULL;
 #endif
+    WPACKET_cleanup(&pkt);
     ossl_statem_set_error(s);
     return 0;
 }
@@ -2909,47 +2912,79 @@ int ssl_do_client_cert_cb(SSL *s, X509 **px509, EVP_PKEY **ppkey)
     return i;
 }
 
-int ssl_cipher_list_to_bytes(SSL *s, STACK_OF(SSL_CIPHER) *sk, unsigned char *p)
+int ssl_cipher_list_to_bytes(SSL *s, STACK_OF(SSL_CIPHER) *sk, WPACKET *pkt)
 {
-    int i, j = 0;
-    const SSL_CIPHER *c;
-    unsigned char *q;
+    int i;
+    size_t totlen = 0, len, maxlen;
     int empty_reneg_info_scsv = !s->renegotiate;
     /* Set disabled masks for this session */
     ssl_set_client_disabled(s);
 
     if (sk == NULL)
         return (0);
-    q = p;
 
-    for (i = 0; i < sk_SSL_CIPHER_num(sk); i++) {
+#ifdef OPENSSL_MAX_TLS1_2_CIPHER_LENGTH
+# if OPENSSL_MAX_TLS1_2_CIPHER_LENGTH < 6
+#  error Max cipher length too short
+# endif
+    /*
+     * Some servers hang if client hello > 256 bytes as hack workaround
+     * chop number of supported ciphers to keep it well below this if we
+     * use TLS v1.2
+     */
+    if (TLS1_get_version(s) >= TLS1_2_VERSION)
+        maxlen = OPENSSL_MAX_TLS1_2_CIPHER_LENGTH & ~1;
+    else
+#endif
+        /* Maximum length that can be stored in 2 bytes. Length must be even */
+        maxlen = 0xfffe;
+
+    if (empty_reneg_info_scsv)
+        maxlen -= 2;
+    if (s->mode & SSL_MODE_SEND_FALLBACK_SCSV)
+        maxlen -= 2;
+
+    for (i = 0; i < sk_SSL_CIPHER_num(sk) && totlen < maxlen; i++) {
+        const SSL_CIPHER *c;
+
         c = sk_SSL_CIPHER_value(sk, i);
         /* Skip disabled ciphers */
         if (ssl_cipher_disabled(s, c, SSL_SECOP_CIPHER_SUPPORTED))
             continue;
-        j = s->method->put_cipher_by_char(c, p);
-        p += j;
+
+        if (!s->method->put_cipher_by_char(c, pkt, &len)) {
+            SSLerr(SSL_F_SSL_CIPHER_LIST_TO_BYTES, ERR_R_INTERNAL_ERROR);
+            return 0;
+        }
+
+        totlen += len;
     }
-    /*
-     * If p == q, no ciphers; caller indicates an error. Otherwise, add
-     * applicable SCSVs.
-     */
-    if (p != q) {
+
+    if (totlen == 0) {
+        SSLerr(SSL_F_SSL_CIPHER_LIST_TO_BYTES, SSL_R_NO_CIPHERS_AVAILABLE);
+        return 0;
+    }
+
+    if (totlen != 0) {
         if (empty_reneg_info_scsv) {
             static SSL_CIPHER scsv = {
                 0, NULL, SSL3_CK_SCSV, 0, 0, 0, 0, 0, 0, 0, 0, 0
             };
-            j = s->method->put_cipher_by_char(&scsv, p);
-            p += j;
+            if (!s->method->put_cipher_by_char(&scsv, pkt, &len)) {
+                SSLerr(SSL_F_SSL_CIPHER_LIST_TO_BYTES, ERR_R_INTERNAL_ERROR);
+                return 0;
+            }
         }
         if (s->mode & SSL_MODE_SEND_FALLBACK_SCSV) {
             static SSL_CIPHER scsv = {
                 0, NULL, SSL3_CK_FALLBACK_SCSV, 0, 0, 0, 0, 0, 0, 0, 0, 0
             };
-            j = s->method->put_cipher_by_char(&scsv, p);
-            p += j;
+            if (!s->method->put_cipher_by_char(&scsv, pkt, &len)) {
+                SSLerr(SSL_F_SSL_CIPHER_LIST_TO_BYTES, ERR_R_INTERNAL_ERROR);
+                return 0;
+            }
         }
     }
 
-    return (p - q);
+    return 1;
 }

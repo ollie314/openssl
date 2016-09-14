@@ -289,11 +289,16 @@ int req_main(int argc, char **argv)
             break;
         case OPT_X509:
             x509 = 1;
+            newreq = 1;
             break;
         case OPT_DAYS:
             days = atoi(opt_arg());
             break;
         case OPT_SET_SERIAL:
+            if (serial != NULL) {
+                BIO_printf(bio_err, "Serial number supplied twice\n");
+                goto opthelp;
+            }
             serial = s2i_ASN1_INTEGER(NULL, opt_arg());
             if (serial == NULL)
                 goto opthelp;
@@ -578,7 +583,7 @@ int req_main(int argc, char **argv)
         }
     }
 
-    if (newreq || x509) {
+    if (newreq) {
         if (pkey == NULL) {
             BIO_printf(bio_err, "you need to specify a private key\n");
             goto end;

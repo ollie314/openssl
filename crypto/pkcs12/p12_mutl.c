@@ -67,8 +67,13 @@ static int pkcs12_gen_gost_mac_key(const char *pass, int passlen,
 }
 
 /* Generate a MAC */
-int PKCS12_gen_mac(PKCS12 *p12, const char *pass, int passlen,
-                   unsigned char *mac, unsigned int *maclen)
+static int pkcs12_gen_mac(PKCS12 *p12, const char *pass, int passlen,
+                          unsigned char *mac, unsigned int *maclen,
+                          int (*pkcs12_key_gen)(const char *pass, int passlen,
+                                                unsigned char *salt, int slen,
+                                                int id, int iter, int n,
+                                                unsigned char *out,
+                                                const EVP_MD *md_type))
 {
     const EVP_MD *md_type;
     HMAC_CTX *hmac = NULL;
@@ -78,6 +83,9 @@ int PKCS12_gen_mac(PKCS12 *p12, const char *pass, int passlen,
     int md_type_nid;
     const X509_ALGOR *macalg;
     const ASN1_OBJECT *macoid;
+
+    if (pkcs12_key_gen == NULL)
+        pkcs12_key_gen = PKCS12_key_gen_utf8;
 
     if (!PKCS7_type_is_data(p12->authsafes)) {
         PKCS12err(PKCS12_F_PKCS12_GEN_MAC, PKCS12_R_CONTENT_TYPE_NOT_DATA);
@@ -111,8 +119,8 @@ int PKCS12_gen_mac(PKCS12 *p12, const char *pass, int passlen,
             return 0;
         }
     } else
-        if (!PKCS12_key_gen(pass, passlen, salt, saltlen, PKCS12_MAC_ID, iter,
-                            md_size, key, md_type)) {
+        if (!(*pkcs12_key_gen)(pass, passlen, salt, saltlen, PKCS12_MAC_ID,
+                               iter, md_size, key, md_type)) {
         PKCS12err(PKCS12_F_PKCS12_GEN_MAC, PKCS12_R_KEY_GEN_ERROR);
         return 0;
     }
@@ -128,6 +136,12 @@ int PKCS12_gen_mac(PKCS12 *p12, const char *pass, int passlen,
     return 1;
 }
 
+int PKCS12_gen_mac(PKCS12 *p12, const char *pass, int passlen,
+                   unsigned char *mac, unsigned int *maclen)
+{
+    return pkcs12_gen_mac(p12, pass, passlen, mac, maclen, NULL);
+}
+
 /* Verify the mac */
 int PKCS12_verify_mac(PKCS12 *p12, const char *pass, int passlen)
 {
@@ -139,14 +153,16 @@ int PKCS12_verify_mac(PKCS12 *p12, const char *pass, int passlen)
         PKCS12err(PKCS12_F_PKCS12_VERIFY_MAC, PKCS12_R_MAC_ABSENT);
         return 0;
     }
-    if (!PKCS12_gen_mac(p12, pass, passlen, mac, &maclen)) {
+    if (!pkcs12_gen_mac(p12, pass, passlen, mac, &maclen,
+                        PKCS12_key_gen_utf8)) {
         PKCS12err(PKCS12_F_PKCS12_VERIFY_MAC, PKCS12_R_MAC_GENERATION_ERROR);
         return 0;
     }
     X509_SIG_get0(p12->mac->dinfo, NULL, &macoct);
     if ((maclen != (unsigned int)ASN1_STRING_length(macoct))
-        || CRYPTO_memcmp(mac, ASN1_STRING_get0_data(macoct), maclen))
+        || CRYPTO_memcmp(mac, ASN1_STRING_get0_data(macoct), maclen) != 0)
         return 0;
+
     return 1;
 }
 
@@ -166,11 +182,15 @@ int PKCS12_set_mac(PKCS12 *p12, const char *pass, int passlen,
         PKCS12err(PKCS12_F_PKCS12_SET_MAC, PKCS12_R_MAC_SETUP_ERROR);
         return 0;
     }
-    if (!PKCS12_gen_mac(p12, pass, passlen, mac, &maclen)) {
+    /*
+     * Note that output mac is forced to UTF-8...
+     */
+    if (!pkcs12_gen_mac(p12, pass, passlen, mac, &maclen,
+                        PKCS12_key_gen_utf8)) {
         PKCS12err(PKCS12_F_PKCS12_SET_MAC, PKCS12_R_MAC_GENERATION_ERROR);
         return 0;
     }
-    X509_SIG_get0_mutable(p12->mac->dinfo, NULL, &macoct);
+    X509_SIG_getm(p12->mac->dinfo, NULL, &macoct);
     if (!ASN1_OCTET_STRING_set(macoct, mac, maclen)) {
         PKCS12err(PKCS12_F_PKCS12_SET_MAC, PKCS12_R_MAC_STRING_SET_ERROR);
         return 0;
@@ -208,7 +228,7 @@ int PKCS12_setup_mac(PKCS12 *p12, int iter, unsigned char *salt, int saltlen,
             return 0;
     } else
         memcpy(p12->mac->salt->data, salt, saltlen);
-    X509_SIG_get0_mutable(p12->mac->dinfo, &macalg, NULL);
+    X509_SIG_getm(p12->mac->dinfo, &macalg, NULL);
     if (!X509_ALGOR_set0(macalg, OBJ_nid2obj(EVP_MD_type(md_type)),
                          V_ASN1_NULL, NULL)) {
         PKCS12err(PKCS12_F_PKCS12_SETUP_MAC, ERR_R_MALLOC_FAILURE);
