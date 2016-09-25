@@ -224,6 +224,7 @@ int WPACKET_start_sub_packet_len__(WPACKET *pkt, size_t lenbytes)
 
     if (!WPACKET_allocate_bytes(pkt, lenbytes, &lenchars))
         return 0;
+    /* Convert to an offset in case the underlying BUF_MEM gets realloc'd */
     sub->packet_len = lenchars - (unsigned char *)pkt->buf->data;
 
     return 1;
@@ -234,7 +235,7 @@ int WPACKET_start_sub_packet(WPACKET *pkt)
     return WPACKET_start_sub_packet_len__(pkt, 0);
 }
 
-int WPACKET_put_bytes(WPACKET *pkt, unsigned int val, size_t size)
+int WPACKET_put_bytes__(WPACKET *pkt, unsigned int val, size_t size)
 {
     unsigned char *data;
 

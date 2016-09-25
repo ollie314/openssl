@@ -1830,7 +1830,7 @@ __owur X509 *ssl_cert_get0_next_certificate(CERT *c, int first);
 void ssl_cert_set_cert_cb(CERT *c, int (*cb) (SSL *ssl, void *arg), void *arg);
 
 __owur int ssl_verify_cert_chain(SSL *s, STACK_OF(X509) *sk);
-__owur int ssl_add_cert_chain(SSL *s, CERT_PKEY *cpk, unsigned long *l);
+__owur int ssl_add_cert_chain(SSL *s, WPACKET *pkt, CERT_PKEY *cpk);
 __owur int ssl_build_cert_chain(SSL *s, SSL_CTX *ctx, int flags);
 __owur int ssl_cert_set_cert_store(CERT *c, X509_STORE *store, int chain,
                                    int ref);
@@ -1950,9 +1950,8 @@ void dtls1_start_timer(SSL *s);
 void dtls1_stop_timer(SSL *s);
 __owur int dtls1_is_timer_expired(SSL *s);
 void dtls1_double_timeout(SSL *s);
-__owur unsigned int dtls_raw_hello_verify_request(unsigned char *buf,
-                                                  unsigned char *cookie,
-                                                  unsigned char cookie_len);
+__owur int dtls_raw_hello_verify_request(WPACKET *pkt, unsigned char *cookie,
+                                         unsigned char cookie_len);
 __owur int dtls1_send_newsession_ticket(SSL *s);
 __owur unsigned int dtls1_min_mtu(SSL *s);
 void dtls1_hm_fragment_free(hm_fragment *frag);
@@ -2038,8 +2037,10 @@ __owur int tls_check_serverhello_tlsext_early(SSL *s, const PACKET *ext,
                                               const PACKET *session_id,
                                               SSL_SESSION **ret);
 
-__owur int tls12_get_sigandhash(unsigned char *p, const EVP_PKEY *pk,
+__owur int tls12_get_sigandhash(WPACKET *pkt, const EVP_PKEY *pk,
                                 const EVP_MD *md);
+__owur int tls12_get_sigandhash_old(unsigned char *p, const EVP_PKEY *pk,
+                                    const EVP_MD *md);
 __owur int tls12_get_sigid(const EVP_PKEY *pk);
 __owur const EVP_MD *tls12_get_hash(unsigned char hash_alg);
 void ssl_set_sig_mask(uint32_t *pmask_a, SSL *s, int op);

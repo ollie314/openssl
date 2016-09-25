@@ -74,20 +74,29 @@ int tls_close_construct_packet(SSL *s, WPACKET *pkt)
 
 int tls_construct_finished(SSL *s, const char *sender, int slen)
 {
-    unsigned char *p;
     int i;
-    unsigned long l;
+    WPACKET pkt;
 
-    p = ssl_handshake_start(s);
+    if (!WPACKET_init(&pkt, s->init_buf)
+            || !ssl_set_handshake_header2(s, &pkt, SSL3_MT_FINISHED)) {
+        SSLerr(SSL_F_TLS_CONSTRUCT_FINISHED, ERR_R_INTERNAL_ERROR);
+        goto err;
+    }
 
     i = s->method->ssl3_enc->final_finish_mac(s,
                                               sender, slen,
                                               s->s3->tmp.finish_md);
-    if (i <= 0)
-        return 0;
+    if (i <= 0) {
+        SSLerr(SSL_F_TLS_CONSTRUCT_FINISHED, ERR_R_INTERNAL_ERROR);
+        goto err;
+    }
+
     s->s3->tmp.finish_md_len = i;
-    memcpy(p, s->s3->tmp.finish_md, i);
-    l = i;
+
+    if (!WPACKET_memcpy(&pkt, s->s3->tmp.finish_md, i)) {
+        SSLerr(SSL_F_TLS_CONSTRUCT_FINISHED, ERR_R_INTERNAL_ERROR);
+        goto err;
+    }
 
     /*
      * Copy the finished so we can use it for renegotiation checks
@@ -102,12 +111,17 @@ int tls_construct_finished(SSL *s, const char *sender, int slen)
         s->s3->previous_server_finished_len = i;
     }
 
-    if (!ssl_set_handshake_header(s, SSL3_MT_FINISHED, l)) {
+    if (!ssl_close_construct_packet(s, &pkt)) {
         SSLerr(SSL_F_TLS_CONSTRUCT_FINISHED, ERR_R_INTERNAL_ERROR);
-        return 0;
+        goto err;
     }
 
     return 1;
+ err:
+    ossl_statem_set_error(s);
+    WPACKET_cleanup(&pkt);
+    ssl3_send_alert(s, SSL3_AL_FATAL, SSL_AD_INTERNAL_ERROR);
+    return 0;
 }
 
 #ifndef OPENSSL_NO_NEXTPROTONEG
@@ -255,10 +269,18 @@ MSG_PROCESS_RETURN tls_process_finished(SSL *s, PACKET *pkt)
 
 int tls_construct_change_cipher_spec(SSL *s)
 {
-    unsigned char *p;
+    WPACKET pkt;
 
-    p = (unsigned char *)s->init_buf->data;
-    *p = SSL3_MT_CCS;
+    if (!WPACKET_init(&pkt, s->init_buf)
+            || !WPACKET_put_bytes_u8(&pkt, SSL3_MT_CCS)
+            || !WPACKET_finish(&pkt)) {
+        WPACKET_cleanup(&pkt);
+        ossl_statem_set_error(s);
+        SSLerr(SSL_F_TLS_CONSTRUCT_CHANGE_CIPHER_SPEC, ERR_R_INTERNAL_ERROR);
+        ssl3_send_alert(s, SSL3_AL_FATAL, SSL_AD_INTERNAL_ERROR);
+        return 0;
+    }
+
     s->init_num = 1;
     s->init_off = 0;
 
@@ -267,22 +289,31 @@ int tls_construct_change_cipher_spec(SSL *s)
 
 unsigned long ssl3_output_cert_chain(SSL *s, CERT_PKEY *cpk)
 {
-    unsigned char *p;
-    unsigned long l = 3 + SSL_HM_HEADER_LENGTH(s);
+    WPACKET pkt;
 
-    if (!ssl_add_cert_chain(s, cpk, &l))
-        return 0;
-
-    l -= 3 + SSL_HM_HEADER_LENGTH(s);
-    p = ssl_handshake_start(s);
-    l2n3(l, p);
-    l += 3;
-
-    if (!ssl_set_handshake_header(s, SSL3_MT_CERTIFICATE, l)) {
+    if (!WPACKET_init(&pkt, s->init_buf)) {
+        /* Should not happen */
         SSLerr(SSL_F_SSL3_OUTPUT_CERT_CHAIN, ERR_R_INTERNAL_ERROR);
-        return 0;
+        goto err;
     }
-    return l + SSL_HM_HEADER_LENGTH(s);
+
+    if (!ssl_set_handshake_header2(s, &pkt, SSL3_MT_CERTIFICATE)
+            || !WPACKET_start_sub_packet_u24(&pkt)) {
+        SSLerr(SSL_F_SSL3_OUTPUT_CERT_CHAIN, ERR_R_INTERNAL_ERROR);
+        goto err;
+    }
+
+    if (!ssl_add_cert_chain(s, &pkt, cpk))
+        goto err;
+
+    if (!WPACKET_close(&pkt) || !ssl_close_construct_packet(s, &pkt)) {
+        SSLerr(SSL_F_SSL3_OUTPUT_CERT_CHAIN, ERR_R_INTERNAL_ERROR);
+        goto err;
+    }
+    return 1;
+ err:
+    WPACKET_cleanup(&pkt);
+    return 0;
 }
 
 WORK_STATE tls_finish_handshake(SSL *s, WORK_STATE wst)
@@ -429,10 +460,6 @@ int tls_get_message_header(SSL *s, int *mt)
          */
         l = RECORD_LAYER_get_rrec_length(&s->rlayer)
             + SSL3_HM_HEADER_LENGTH;
-        if (l && !BUF_MEM_grow_clean(s->init_buf, (int)l)) {
-            SSLerr(SSL_F_TLS_GET_MESSAGE_HEADER, ERR_R_BUF_LIB);
-            goto err;
-        }
         s->s3->tmp.message_size = l;
 
         s->init_msg = s->init_buf->data;
@@ -445,11 +472,6 @@ int tls_get_message_header(SSL *s, int *mt)
             SSLerr(SSL_F_TLS_GET_MESSAGE_HEADER, SSL_R_EXCESSIVE_MESSAGE_SIZE);
             goto f_err;
         }
-        if (l && !BUF_MEM_grow_clean(s->init_buf,
-                                     (int)l + SSL3_HM_HEADER_LENGTH)) {
-            SSLerr(SSL_F_TLS_GET_MESSAGE_HEADER, ERR_R_BUF_LIB);
-            goto err;
-        }
         s->s3->tmp.message_size = l;
 
         s->init_msg = s->init_buf->data + SSL3_HM_HEADER_LENGTH;
@@ -459,7 +481,6 @@ int tls_get_message_header(SSL *s, int *mt)
     return 1;
  f_err:
     ssl3_send_alert(s, SSL3_AL_FATAL, al);
- err:
     return 0;
 }
 

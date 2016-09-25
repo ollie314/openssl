@@ -388,6 +388,20 @@ int dtls_get_message(SSL *s, int *mt, unsigned long *len)
     return 1;
 }
 
+/*
+ * dtls1_max_handshake_message_len returns the maximum number of bytes
+ * permitted in a DTLS handshake message for |s|. The minimum is 16KB, but
+ * may be greater if the maximum certificate list size requires it.
+ */
+static unsigned long dtls1_max_handshake_message_len(const SSL *s)
+{
+    unsigned long max_len =
+        DTLS1_HM_HEADER_LENGTH + SSL3_RT_MAX_ENCRYPTED_LENGTH;
+    if (max_len < (unsigned long)s->max_cert_list)
+        return s->max_cert_list;
+    return max_len;
+}
+
 static int dtls1_preprocess_fragment(SSL *s, struct hm_header_st *msg_hdr)
 {
     size_t frag_off, frag_len, msg_len;
@@ -397,15 +411,16 @@ static int dtls1_preprocess_fragment(SSL *s, struct hm_header_st *msg_hdr)
     frag_len = msg_hdr->frag_len;
 
     /* sanity checking */
-    if ((frag_off + frag_len) > msg_len) {
+    if ((frag_off + frag_len) > msg_len
+            || msg_len > dtls1_max_handshake_message_len(s)) {
         SSLerr(SSL_F_DTLS1_PREPROCESS_FRAGMENT, SSL_R_EXCESSIVE_MESSAGE_SIZE);
         return SSL_AD_ILLEGAL_PARAMETER;
     }
 
     if (s->d1->r_msg_hdr.frag_off == 0) { /* first fragment */
         /*
-         * msg_len is limited to 2^24, but is effectively checked against max
-         * above
+         * msg_len is limited to 2^24, but is effectively checked against
+         * dtls_max_handshake_message_len(s) above
          */
         if (!BUF_MEM_grow_clean(s->init_buf, msg_len + DTLS1_HM_HEADER_LENGTH)) {
             SSLerr(SSL_F_DTLS1_PREPROCESS_FRAGMENT, ERR_R_BUF_LIB);
@@ -491,20 +506,6 @@ static int dtls1_retrieve_buffered_fragment(SSL *s, int *ok)
         return -1;
     } else
         return 0;
-}
-
-/*
- * dtls1_max_handshake_message_len returns the maximum number of bytes
- * permitted in a DTLS handshake message for |s|. The minimum is 16KB, but
- * may be greater if the maximum certificate list size requires it.
- */
-static unsigned long dtls1_max_handshake_message_len(const SSL *s)
-{
-    unsigned long max_len =
-        DTLS1_HM_HEADER_LENGTH + SSL3_RT_MAX_ENCRYPTED_LENGTH;
-    if (max_len < (unsigned long)s->max_cert_list)
-        return s->max_cert_list;
-    return max_len;
 }
 
 static int
@@ -873,17 +874,31 @@ static int dtls_get_reassembled_message(SSL *s, long *len)
  */
 int dtls_construct_change_cipher_spec(SSL *s)
 {
-    unsigned char *p;
+    WPACKET pkt;
 
-    p = (unsigned char *)s->init_buf->data;
-    *p++ = SSL3_MT_CCS;
+    if (!WPACKET_init(&pkt, s->init_buf)
+            || !WPACKET_put_bytes_u8(&pkt, SSL3_MT_CCS)) {
+        SSLerr(SSL_F_DTLS_CONSTRUCT_CHANGE_CIPHER_SPEC, ERR_R_INTERNAL_ERROR);
+        goto err;
+    }
+
     s->d1->handshake_write_seq = s->d1->next_handshake_write_seq;
     s->init_num = DTLS1_CCS_HEADER_LENGTH;
 
     if (s->version == DTLS1_BAD_VER) {
         s->d1->next_handshake_write_seq++;
-        s2n(s->d1->handshake_write_seq, p);
+
+        if (!WPACKET_put_bytes_u16(&pkt, s->d1->handshake_write_seq)) {
+            SSLerr(SSL_F_DTLS_CONSTRUCT_CHANGE_CIPHER_SPEC, ERR_R_INTERNAL_ERROR);
+            goto err;
+        }
+
         s->init_num += 2;
+    }
+
+    if (!WPACKET_finish(&pkt)) {
+        SSLerr(SSL_F_DTLS_CONSTRUCT_CHANGE_CIPHER_SPEC, ERR_R_INTERNAL_ERROR);
+        goto err;
     }
 
     s->init_off = 0;
@@ -894,10 +909,16 @@ int dtls_construct_change_cipher_spec(SSL *s)
     /* buffer the message to handle re-xmits */
     if (!dtls1_buffer_message(s, 1)) {
         SSLerr(SSL_F_DTLS_CONSTRUCT_CHANGE_CIPHER_SPEC, ERR_R_INTERNAL_ERROR);
-        return 0;
+        goto err    ;
     }
 
     return 1;
+ err:
+    WPACKET_cleanup(&pkt);
+    ossl_statem_set_error(s);
+    ssl3_send_alert(s, SSL3_AL_FATAL, SSL_AD_INTERNAL_ERROR);
+
+    return 0;
 }
 
 #ifndef OPENSSL_NO_SCTP

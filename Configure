@@ -114,6 +114,7 @@ my $gcc_devteam_warn = "-DDEBUG_UNUSED"
         # it grew impossible to resolve this without sizeable additional
         # code, so we just tell compiler to be pedantic about everything
         # but 'long long' type.
+        . " -Wswitch"
         . " -DPEDANTIC -pedantic -Wno-long-long"
         . " -Wall"
         . " -Wsign-compare"
@@ -127,7 +128,6 @@ my $gcc_devteam_warn = "-DDEBUG_UNUSED"
 # These are used in addition to $gcc_devteam_warn when the compiler is clang.
 # TODO(openssl-team): fix problems and investigate if (at least) the
 # following warnings can also be enabled:
-#       -Wswitch-enum
 #       -Wcast-align
 #       -Wunreachable-code
 #       -Wlanguage-extension-token -- no, we use asm()
@@ -136,6 +136,7 @@ my $gcc_devteam_warn = "-DDEBUG_UNUSED"
 my $clang_devteam_warn = ""
         . " -Qunused-arguments"
         . " -Wextra"
+        . " -Wswitch -Wswitch-default"
         . " -Wno-unused-parameter"
         . " -Wno-missing-field-initializers"
         . " -Wno-language-extension-token"
@@ -886,7 +887,8 @@ foreach (sort (keys %disabled))
 		$what = "ripemd" if $what eq "rmd160";
 		$what = "whrlpool" if $what eq "whirlpool";
 
-		if (grep { $_ eq $what } @{$config{sdirs}})
+		if ($what ne "async" && $what ne "err"
+		    && grep { $_ eq $what } @{$config{sdirs}})
 			{
 			push @{$config{openssl_algorithm_defines}}, "OPENSSL_NO_$WHAT";
 			@{$config{sdirs}} = grep { $_ ne $what} @{$config{sdirs}};
@@ -921,6 +923,8 @@ my %target = resolve_config($target);
 
 &usage if (!%target || $target{template});
 
+my %conf_files = map { $_ => 1 } (@{$target{_conf_fname_int}});
+$config{conf_files} = [ sort keys %conf_files ];
 %target = ( %{$table{DEFAULTS}}, %target );
 
 $target{exe_extension}="";
@@ -1314,44 +1318,6 @@ my %unified_info = ();
 
 my $buildinfo_debug = defined($ENV{CONFIGURE_DEBUG_BUILDINFO});
 if ($builder eq "unified") {
-    # Store the name of the template file we will build the build file from
-    # in %config.  This may be useful for the build file itself.
-    my @build_file_template_names =
-	( $builder_platform."-".$target{build_file}.".tmpl",
-	  $target{build_file}.".tmpl" );
-    my @build_file_templates = ();
-
-    # First, look in the user provided directory, if given
-    if (defined $ENV{$local_config_envname}) {
-	@build_file_templates =
-	    map {
-		if ($^O eq 'VMS') {
-		    # VMS environment variables are logical names,
-		    # which can be used as is
-		    $local_config_envname . ':' . $_;
-		} else {
-		    catfile($ENV{$local_config_envname}, $_);
-		}
-	    }
-	    @build_file_template_names;
-    }
-    # Then, look in our standard directory
-    push @build_file_templates,
-	( map { catfile($srcdir, "Configurations", $_) }
-	  @build_file_template_names );
-
-    my $build_file_template;
-    for $_ (@build_file_templates) {
-	$build_file_template = $_;
-        last if -f $build_file_template;
-
-        $build_file_template = undef;
-    }
-    if (!defined $build_file_template) {
-	die "*** Couldn't find any of:\n", join("\n", @build_file_templates), "\n";
-    }
-    $config{build_file_template} = $build_file_template;
-
     use lib catdir(dirname(__FILE__),"util");
     use with_fallback qw(Text::Template);
 
@@ -1387,6 +1353,47 @@ if ($builder eq "unified") {
         #print STDERR "DEBUG[cleanfile]: $d , $f => $res\n";
         return $res;
     }
+
+    # Store the name of the template file we will build the build file from
+    # in %config.  This may be useful for the build file itself.
+    my @build_file_template_names =
+	( $builder_platform."-".$target{build_file}.".tmpl",
+	  $target{build_file}.".tmpl" );
+    my @build_file_templates = ();
+
+    # First, look in the user provided directory, if given
+    if (defined $ENV{$local_config_envname}) {
+	@build_file_templates =
+	    map {
+		if ($^O eq 'VMS') {
+		    # VMS environment variables are logical names,
+		    # which can be used as is
+		    $local_config_envname . ':' . $_;
+		} else {
+		    catfile($ENV{$local_config_envname}, $_);
+		}
+	    }
+	    @build_file_template_names;
+    }
+    # Then, look in our standard directory
+    push @build_file_templates,
+	( map { cleanfile($srcdir, catfile("Configurations", $_), $blddir) }
+	  @build_file_template_names );
+
+    my $build_file_template;
+    for $_ (@build_file_templates) {
+	$build_file_template = $_;
+        last if -f $build_file_template;
+
+        $build_file_template = undef;
+    }
+    if (!defined $build_file_template) {
+	die "*** Couldn't find any of:\n", join("\n", @build_file_templates), "\n";
+    }
+    $config{build_file_templates}
+      = [ $build_file_template,
+          cleanfile($srcdir, catfile("Configurations", "common.tmpl"),
+                    $blddir) ];
 
     my @build_infos = ( [ ".", "build.info" ] );
     foreach (@{$config{dirs}}) {
@@ -2035,8 +2042,7 @@ print "EX_LIBS       =$target{ex_libs} $config{ex_libs}\n";
 my %builders = (
     unified => sub {
         run_dofile(catfile($blddir, $target{build_file}),
-                   $config{build_file_template},
-                   catfile($srcdir, "Configurations", "common.tmpl"));
+                   @{$config{build_file_templates}});
     },
     );
 
@@ -2209,7 +2215,8 @@ sub read_config {
     close(CONFFILE);
     my %targets = ();
     {
-	local %table = %::table;    # Protect %table from tampering
+	# Protect certain tables from tampering
+	local %table = %::table;
 
 	eval $content;
 	warn $@ if $@;
@@ -2224,7 +2231,9 @@ sub read_config {
 		warn "Misconfigured target configuration for $_ (should be a hash table), ignoring...\n";
 	    }
 	    delete $targets{$_};
-	}
+	} else {
+            $targets{$_}->{_conf_fname_int} = add([ $fname ]);
+        }
     }
 
     %table = (%table, %targets);
