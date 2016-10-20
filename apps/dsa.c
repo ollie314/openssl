@@ -34,7 +34,7 @@ typedef enum OPTION_choice {
     OPT_PUBOUT, OPT_CIPHER, OPT_PASSIN, OPT_PASSOUT
 } OPTION_CHOICE;
 
-OPTIONS dsa_options[] = {
+const OPTIONS dsa_options[] = {
     {"help", OPT_HELP, '-', "Display this summary"},
     {"inform", OPT_INFORM, 'f', "Input format, DER PEM PVK"},
     {"outform", OPT_OUTFORM, 'F', "Output format, DER PEM PVK"},
@@ -249,6 +249,7 @@ int dsa_main(int argc, char **argv)
  end:
     BIO_free_all(out);
     DSA_free(dsa);
+    release_engine(e);
     OPENSSL_free(passin);
     OPENSSL_free(passout);
     return (ret);

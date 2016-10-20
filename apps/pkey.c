@@ -21,7 +21,7 @@ typedef enum OPTION_choice {
     OPT_TEXT, OPT_NOOUT, OPT_MD, OPT_TRADITIONAL
 } OPTION_CHOICE;
 
-OPTIONS pkey_options[] = {
+const OPTIONS pkey_options[] = {
     {"help", OPT_HELP, '-', "Display this summary"},
     {"inform", OPT_INFORM, 'f', "Input format (DER or PEM)"},
     {"outform", OPT_OUTFORM, 'F', "Output format (DER or PEM)"},
@@ -180,6 +180,7 @@ int pkey_main(int argc, char **argv)
 
  end:
     EVP_PKEY_free(pkey);
+    release_engine(e);
     BIO_free_all(out);
     BIO_free(in);
     OPENSSL_free(passin);

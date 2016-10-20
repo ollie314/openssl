@@ -84,7 +84,7 @@ typedef enum OPTION_choice {
     OPT_CIPHER
 } OPTION_CHOICE;
 
-OPTIONS cms_options[] = {
+const OPTIONS cms_options[] = {
     {OPT_HELP_STR, 1, '-', "Usage: %s [options] cert.pem...\n"},
     {OPT_HELP_STR, 1, '-',
         "  cert.pem... recipient certs for encryption\n"},
@@ -1109,6 +1109,7 @@ int cms_main(int argc, char **argv)
     EVP_PKEY_free(key);
     CMS_ContentInfo_free(cms);
     CMS_ContentInfo_free(rcms);
+    release_engine(e);
     BIO_free(rctin);
     BIO_free(in);
     BIO_free(indata);

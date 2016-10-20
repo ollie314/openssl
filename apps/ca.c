@@ -155,7 +155,7 @@ typedef enum OPTION_choice {
     OPT_CRL_REASON, OPT_CRL_HOLD, OPT_CRL_COMPROMISE, OPT_CRL_CA_COMPROMISE
 } OPTION_CHOICE;
 
-OPTIONS ca_options[] = {
+const OPTIONS ca_options[] = {
     {"help", OPT_HELP, '-', "Display this summary"},
     {"verbose", OPT_VERBOSE, '-', "Verbose output during processing"},
     {"config", OPT_CONFIG, 's', "A config file"},
@@ -1231,6 +1231,7 @@ end_of_options:
     X509_CRL_free(crl);
     NCONF_free(conf);
     NCONF_free(extconf);
+    release_engine(e);
     return (ret);
 }
 

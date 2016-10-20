@@ -45,7 +45,7 @@ typedef enum OPTION_choice {
     OPT_OUTFORM, OPT_CONTENT
 } OPTION_CHOICE;
 
-OPTIONS smime_options[] = {
+const OPTIONS smime_options[] = {
     {OPT_HELP_STR, 1, '-', "Usage: %s [options] cert.pem...\n"},
     {OPT_HELP_STR, 1, '-',
         "  cert.pem... recipient certs for encryption\n"},
@@ -614,6 +614,7 @@ int smime_main(int argc, char **argv)
     X509_free(signer);
     EVP_PKEY_free(key);
     PKCS7_free(p7);
+    release_engine(e);
     BIO_free(in);
     BIO_free(indata);
     BIO_free_all(out);

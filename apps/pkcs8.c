@@ -27,7 +27,7 @@ typedef enum OPTION_choice {
     OPT_TRADITIONAL
 } OPTION_CHOICE;
 
-OPTIONS pkcs8_options[] = {
+const OPTIONS pkcs8_options[] = {
     {"help", OPT_HELP, '-', "Display this summary"},
     {"inform", OPT_INFORM, 'F', "Input format (DER or PEM)"},
     {"outform", OPT_OUTFORM, 'F', "Output format (DER or PEM)"},
@@ -343,6 +343,7 @@ int pkcs8_main(int argc, char **argv)
     X509_SIG_free(p8);
     PKCS8_PRIV_KEY_INFO_free(p8inf);
     EVP_PKEY_free(pkey);
+    release_engine(e);
     BIO_free_all(out);
     BIO_free(in);
     OPENSSL_free(passin);

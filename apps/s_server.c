@@ -679,7 +679,7 @@ typedef enum OPTION_choice {
     OPT_X_ENUM
 } OPTION_CHOICE;
 
-OPTIONS s_server_options[] = {
+const OPTIONS s_server_options[] = {
     {"help", OPT_HELP, '-', "Display this summary"},
     {"port", OPT_PORT, 'p',
      "TCP/IP port to listen on for connections (default is " PORT ")"},
@@ -1963,6 +1963,7 @@ int s_server_main(int argc, char *argv[])
     ssl_excert_free(exc);
     sk_OPENSSL_STRING_free(ssl_args);
     SSL_CONF_CTX_free(cctx);
+    release_engine(engine);
     BIO_free(bio_s_out);
     bio_s_out = NULL;
     BIO_free(bio_s_msg);

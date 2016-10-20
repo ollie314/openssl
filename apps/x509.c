@@ -59,7 +59,7 @@ typedef enum OPTION_choice {
     OPT_BADSIG, OPT_MD, OPT_ENGINE, OPT_NOCERT
 } OPTION_CHOICE;
 
-OPTIONS x509_options[] = {
+const OPTIONS x509_options[] = {
     {"help", OPT_HELP, '-', "Display this summary"},
     {"inform", OPT_INFORM, 'f',
      "Input format - default PEM (one of DER, NET or PEM)"},
@@ -893,6 +893,7 @@ int x509_main(int argc, char **argv)
     sk_ASN1_OBJECT_pop_free(trust, ASN1_OBJECT_free);
     sk_ASN1_OBJECT_pop_free(reject, ASN1_OBJECT_free);
     ASN1_OBJECT_free(objtmp);
+    release_engine(e);
     OPENSSL_free(passin);
     return (ret);
 }
